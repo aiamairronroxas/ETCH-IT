@@ -1,0 +1,10 @@
+v1 changes: Added folders and files such as
+            root/main.py
+            root/backend/drill
+            root/backend/drill/drill.py
+            root/backend/mill
+            root/backend/mill/mill.py
+            root/frontend/assets
+            root/frontend/frontend.py
+            root/patchnotes/v1.txt
+Note: added ko na lahat para organize na
