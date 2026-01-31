@@ -47,4 +47,5 @@ def plot_trace_as_filled_poly(ax, primitive):
     ax.add_patch(patches.Circle(end, width/2, color='black'))
 
 # Run the function
-plot_gerber('drill_1_16.xln')
+# FOR TESTING PURPOSES ONLY
+# plot_gerber('drill_1_16.xln')

@@ -53,5 +53,6 @@ def plot_excellon(file_path):
     # 4. Display the window
     plt.show()
 
-# --- Simplified Call ---
-plot_excellon('drill_1_16.xln')
+# --- Simplified Call --- 
+# FOR TESTING PURPOSES ONLY
+# plot_excellon('drill_1_16.xln')
