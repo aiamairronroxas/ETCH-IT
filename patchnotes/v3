@@ -1,0 +1,6 @@
+Mill.py and Drill.py added
+
+changes:
+
+Functions to plot mill files (gerber) is made - simply call plot_gerber to render the gerber file
+Functions to plot drill files (excellon) is made - simply call plot_excellon to render the drill file
