@@ -3,3 +3,5 @@ mill_gcode.py and drill_gcode.py added.
 Changes:
 
 Added functions that parses gerber and drill files and writes corresponding gcode. 
+Simply call generate_mill_gcode to generate the gcode of the selected gerber file. 
+Simply call generate_drill_gcode to generate the gcode of the selected drill file.

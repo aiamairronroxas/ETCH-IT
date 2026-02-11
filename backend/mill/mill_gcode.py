@@ -1,89 +1,93 @@
 import gerber
-import shapely
-from shapely.geometry import LineString, Point, Polygon
+from gerber.primitives import Line, Circle, Rectangle, Region
+import shapely.geometry as geom
 from shapely.ops import unary_union
+import math
 
 def generate_mill_gcode(layer_path, output_file="isolation.nc", tool_dia=0.2, drill_depth=-0.1, travel_height=2.0):
-    # 1. Load the Gerber file
-    layer = gerber.read(layer_path)
+    try:
+        layer = gerber.read(layer_path)
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
     polygons = []
+    tool_radius = tool_dia / 2
 
-    print(f"Processing {layer_path} for isolation routing...")
-
-    # 2. Convert Gerber primitives to Shapely Polygons
+    # --- 1. Extraction (Using the 'Render' style logic you preferred) ---
     for p in layer.primitives:
-        # 1. Handle Traces (Lines)
-        if hasattr(p, 'start') and hasattr(p, 'end'):
-            line = LineString([p.start, p.end])
-            # Safely get diameter from aperture, or default to 0.2
-            aperture = getattr(p, 'aperture', None)
-            trace_width = getattr(aperture, 'diameter', 0.2) if aperture else 0.2
+        if isinstance(p, Region):
+            pts = []
+            for sub_p in p.primitives:
+                if hasattr(sub_p, 'start'): pts.append(sub_p.start)
+                if hasattr(sub_p, 'end'): pts.append(sub_p.end)
+            if len(pts) > 2: polygons.append(geom.Polygon(pts).buffer(tool_radius))
+        
+        elif isinstance(p, Rectangle):
+            x, y = p.position
+            w, h = p.width, p.height
+            polygons.append(geom.box(x-w/2, y-h/2, x+w/2, y+h/2).buffer(tool_radius))
             
-            poly = line.buffer((trace_width / 2) + (tool_dia / 2))
-            polygons.append(poly)
+        elif isinstance(p, Circle):
+            polygons.append(geom.Point(p.position).buffer(p.radius + tool_radius))
             
-        # 2. Handle Circular Pads
-        elif hasattr(p, 'position') and hasattr(p, 'aperture'):
-            # This handles standard flashed circles/pads
-            point = Point(p.position)
-            pad_dia = p.aperture.diameter if hasattr(p.aperture, 'diameter') else 0.5
-            poly = point.buffer((pad_dia / 2) + (tool_dia / 2))
-            polygons.append(poly)
+        elif isinstance(p, Line):
+            width = getattr(p.aperture, 'diameter', 0.2) if p.aperture else 0.2
+            polygons.append(geom.LineString([p.start, p.end]).buffer((width/2) + tool_radius))
 
-        # 3. Handle Polygon Primitives (Octagons/Regions)
-        elif hasattr(p, 'points'):
-            # This replaces the "skip" logic by actually processing the shape
-            # p.points is a list of (x, y) tuples provided by the gerber library
-            poly_shape = Polygon(p.points)
-            
-            # Buffer it by the tool radius for the isolation path
-            isolation_poly = poly_shape.buffer(tool_dia / 2)
-            polygons.append(isolation_poly)
-            
-        else:
-            print(f"Skipping unknown primitive type: {type(p).__name__}")
+    if not polygons:
+        return False
 
-    # 3. Merge overlapping paths into a single unified geometry
-    merged_copper = unary_union(polygons)
-    
-    # We want to mill the BOUNDARY (the edge) of the copper
-    toolpaths = merged_copper.boundary  
+    # --- 2. Merge and Extract Contours ---
+    merged = unary_union(polygons)
+    # Get list of all individual boundaries (LinearRings)
+    raw_paths = []
+    if hasattr(merged, 'geoms'):
+        for poly in merged.geoms:
+            raw_paths.append(list(poly.boundary.coords))
+    else:
+        raw_paths.append(list(merged.boundary.coords))
 
-    # 4. Write G-code
+    # --- 3. Traveling Salesman (Nearest Neighbor) Optimization ---
+    optimized_paths = []
+    current_pos = (0, 0)
+
+    while raw_paths:
+        # Find the path whose first coordinate is closest to current_pos
+        best_idx = 0
+        min_dist = float('inf')
+        
+        for i, path in enumerate(raw_paths):
+            d = math.dist(current_pos, path[0])
+            if d < min_dist:
+                min_dist = d
+                best_idx = i
+        
+        # Pull the best path out of the list
+        chosen_path = raw_paths.pop(best_idx)
+        optimized_paths.append(chosen_path)
+        # Update current position to the END of the path we just finished
+        current_pos = chosen_path[-1]
+
+    # --- 4. Write G-Code ---
     with open(output_file, "w") as f:
-        # Header
-        f.write("G21 ; Units: mm\n")
-        f.write("G90 ; Absolute positioning\n")
-        f.write(f"G0 Z{travel_height} ; Lift tool\n")
-
-        # Handle multiple disconnected paths (MultiLineString or LineString)
-        if hasattr(toolpaths, 'geoms'):
-            paths = toolpaths.geoms
-        else:
-            paths = [toolpaths]
-
-        for path in paths:
-            coords = list(path.coords)
-            if not coords: continue
-
-            # Move to start of path
-            f.write(f"G0 X{coords[0][0]:.4f} Y{coords[0][1]:.4f}\n")
+        f.write("G21 ; mm\nG90 ; Absolute\nM3 S1000 ; Spindle ON\n")
+        
+        for path in optimized_paths:
+            # Rapid to Start
+            f.write(f"G0 X{path[0][0]:.4f} Y{path[0][1]:.4f} Z{travel_height}\n")
             # Plunge
             f.write(f"G1 Z{drill_depth} F100\n")
-            
-            # Cut path
-            for x, y in coords[1:]:
+            # Cut
+            for x, y in path[1:]:
                 f.write(f"G1 X{x:.4f} Y{y:.4f} F200\n")
-            
-            # Lift tool
+            # Lift
             f.write(f"G0 Z{travel_height}\n")
 
-        # Footer
-        f.write("G0 X0 Y0 ; Return home\n")
-        f.write("M30 ; End of program\n")
+        f.write("G0 X0 Y0\nM30\n")
 
-    print(f"Success! G-code saved to {output_file}")
+    print(f"Success! {len(optimized_paths)} paths optimized and saved.")
+    return True
 
-# --- Execute ---
-# Using the file visible in your sidebar
+# Call it
 generate_mill_gcode('copper_bottom.gbr')
