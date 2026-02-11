@@ -83,4 +83,4 @@ def plot_trace_as_filled_poly(ax, primitive):
 
 # Run the function
 # FOR TESTING PURPOSES ONLY
-plot_gerber('copper_bottom.gbr')
+# plot_gerber('copper_bottom.gbr')
