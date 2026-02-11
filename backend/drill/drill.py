@@ -1,56 +1,58 @@
 import gerber
-import math
+from gerber.primitives import Circle
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
-def generate_drill_gcode(layer_path, output_file="drill.nc", safe_z=2.0, drill_z=-1.8):
+def plot_drill_layer(ax, file_path):
+    """
+    Core logic: Reads an Excellon drill file and adds red circles to an existing axis.
+    """
     try:
-        layer = gerber.read(layer_path)
+        layer = gerber.read(file_path)
+        print(f"Reading Drill File: {file_path}")
+        
+        for primitive in layer.primitives:
+            # Check for Circle type or position attribute
+            if isinstance(primitive, Circle) or hasattr(primitive, 'position'):
+                pos = primitive.position
+                
+                try:
+                    # Access diameter via primitive or aperture
+                    d = primitive.diameter if hasattr(primitive, 'diameter') else primitive.aperture.diameter
+                except AttributeError:
+                    d = 0.8  # Default drill size
+                
+                hole = patches.Circle(pos, d/2, color='red', fill=True, alpha=0.9, zorder=5)
+                ax.add_patch(hole)
+                
+        print(f"Successfully plotted {len(layer.primitives)} drill hits.")
     except Exception as e:
-        print(f"Error reading file: {e}")
-        return False
+        print(f"Error in plot_drill_layer: {e}")
 
-    # 1. Collect all raw points first
-    raw_points = []
-    for p in layer.primitives:
-        if hasattr(p, 'position'):
-            raw_points.append(p.position)
-        elif hasattr(p, 'x') and hasattr(p, 'y'):
-            raw_points.append((p.x, p.y))
-
-    if not raw_points:
-        print("No holes found.")
-        return False
-
-    # 2. Nearest Neighbor Sorting
-    # Start at (0,0) or the first point
-    optimized_points = []
-    current_pos = (0, 0)
+def plot_excellon(file_path):
+    """
+    Wrapper: Sets up the Matplotlib environment and triggers the drill plotting.
+    """
+    # 1. Create the Figure and Axis
+    fig, ax = plt.subplots(figsize=(10, 8))
     
-    while raw_points:
-        # Find the point in raw_points closest to current_pos
-        nearest_pt = min(raw_points, key=lambda pt: math.dist(current_pos, pt))
-        optimized_points.append(nearest_pt)
-        raw_points.remove(nearest_pt)
-        current_pos = nearest_pt
-
-    # 3. Write the G-code in the optimized order
-    try:
-        with open(output_file, "w") as f:
-            f.write(f"; Optimized Drill G-code\n")
-            f.write("G21 ; mm\nG90 ; Absolute\nM3 S1000 ; Spindle ON\n")
-            f.write(f"G0 Z{safe_z}\n")
-
-            for x, y in optimized_points:
-                f.write(f"G0 X{x:.4f} Y{y:.4f}\n")
-                f.write(f"G1 Z{drill_z} F100\n")
-                f.write(f"G0 Z{safe_z}\n")
-
-            f.write("M5 ; Spindle OFF\nG0 X0 Y0\nM30\n")
-            
-        print(f"Success! {len(optimized_points)} holes optimized.")
-        return True
-    except Exception as e:
-        print(f"Error: {e}")
-        return False
+    # 2. Call the worker function
+    plot_drill_layer(ax, file_path)
     
+    plot_drill_layer(ax, file_path)
+    ax.relim()        # Recalculate limits based on added patches
+    ax.autoscale_view() # Adjust the view to those limits
+
+    # 3. Finalize Plot Settings
+    ax.set_aspect('equal')
+    ax.set_title(f"Excellon Drill Verification: {file_path}")
+    ax.set_xlabel("X (mm)")
+    ax.set_ylabel("Y (mm)")
+    plt.grid(True, linestyle=':', alpha=0.5)
+    
+    # 4. Display the window
+    plt.show()
+
+# --- Simplified Call --- 
 # FOR TESTING PURPOSES ONLY
-# generate_drill_gcode('drill_1_16.xln')
+# plot_excellon('drill_1_16.xln')
