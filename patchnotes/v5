@@ -1,5 +1,7 @@
 v5 changes: Updated mill.py and mill_gcode.py
 
+Reuploaded drill.py as it seems to have some conflict with branch v5.
 Updated v4 patchnotes
 Updated mill gcode function to recognize vias and square pads and optimized tool pathing using Nearest Neighbor Algorithm.
 Updated mill render function to recognize vias and square pads.
+Reuploaded drill.py as it seems to have some conflict with branch v5.
