@@ -4,7 +4,7 @@ import shapely.geometry as geom
 from shapely.ops import unary_union
 import math
 
-def generate_mill_gcode(layer_path, output_file="isolation.nc", tool_dia=0.2, drill_depth=-0.1, travel_height=2.0):
+def generate_mill_gcode(layer_path, output_file="isolation1.nc", tool_dia=0.5, drill_depth=-0.1, travel_height=2.0):
     try:
         layer = gerber.read(layer_path)
     except Exception as e:
@@ -90,4 +90,4 @@ def generate_mill_gcode(layer_path, output_file="isolation.nc", tool_dia=0.2, dr
     return True
 
 # FOR TESTING PURPOSES ONLY
-# generate_mill_gcode('copper_bottom.gbr')
+generate_mill_gcode('copper_bottom.gbr')
