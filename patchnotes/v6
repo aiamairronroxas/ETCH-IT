@@ -1,0 +1,3 @@
+Added requirements.txt containing packages used in the project
+
+Updated tool diameter in mill.py to match tool diameter in machine.
