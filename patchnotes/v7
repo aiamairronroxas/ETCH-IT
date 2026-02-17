@@ -1,0 +1,5 @@
+v7 changes: updated frontend.py and general updates in folders
+
+updated frontend.py to process input files and run intended commands
+added __init__.py to both backend/ and frontend/ folders
+updated v6 patchnote
