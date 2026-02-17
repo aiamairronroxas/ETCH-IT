@@ -6,18 +6,53 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 def plot_gerber(file_path):
-    layer = gerber.read(file_path)
+    try:
+        layer = gerber.read(file_path)
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+    
     fig, ax = plt.subplots(figsize=(10, 10))
-    units = layer.units if layer.units else "mm"
-
+    
     for primitive in layer.primitives:
-        # 1. DRAW LINES (Traces)
+        # 1. TRACES (Lines)
         if isinstance(primitive, Line):
             plot_trace_as_filled_poly(ax, primitive)
 
+        # 2. CIRCULAR PADS (Vias, circular SMD pads)
+        elif isinstance(primitive, Circle):
+            # Gerber Circle primitives have 'position' and 'radius' or use aperture diameter
+            radius = getattr(primitive, 'radius', None)
+            if radius is None:
+                radius = primitive.aperture.diameter / 2
+            ax.add_patch(patches.Circle(primitive.position, radius, color='black'))
+
+        # 3. RECTANGULAR PADS (Resistors, Capacitors, IC pins)
+        elif isinstance(primitive, Rectangle):
+            # Rectangle primitives are defined by center (position) and dimensions
+            width = primitive.width
+            height = primitive.height
+            # Calculate bottom-left corner for matplotlib
+            xy = (primitive.position[0] - width/2, primitive.position[1] - height/2)
+            ax.add_patch(patches.Rectangle(xy, width, height, color='black'))
+
+        # 4. COMPLEX PADS & COPPER POURS (Regions)
+        elif isinstance(primitive, Region):
+            # A Region is a list of primitives (usually lines and arcs) forming a loop
+            # We extract the vertices to create a single filled Polygon
+            points = []
+            for sub_p in primitive.primitives:
+                if isinstance(sub_p, Line):
+                    points.append(sub_p.start)
+                    points.append(sub_p.end)
+            
+            if points:
+                # Remove duplicates while preserving order to keep the path clean
+                poly = Polygon(points, color='black', closed=True)
+                ax.add_patch(poly)
+
     ax.set_aspect('equal', adjustable='datalim')
     ax.autoscale_view()
-    ax.set_title(f"Visual Verification: {file_path}")
     plt.show()
 
 def plot_trace_as_filled_poly(ax, primitive):
@@ -48,4 +83,4 @@ def plot_trace_as_filled_poly(ax, primitive):
 
 # Run the function
 # FOR TESTING PURPOSES ONLY
-# plot_gerber('drill_1_16.xln')
+# plot_gerber('copper_bottom.gbr')
