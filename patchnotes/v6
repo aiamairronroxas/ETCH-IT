@@ -1,3 +1,4 @@
+v6 changes: added requirements.txt and changed tool diameter in program
 Added requirements.txt containing packages used in the project
 
 Updated tool diameter in mill.py to match tool diameter in machine.
