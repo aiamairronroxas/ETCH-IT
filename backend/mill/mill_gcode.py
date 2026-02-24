@@ -4,9 +4,13 @@ import shapely.geometry as geom
 from shapely.ops import unary_union
 import math
 
-def generate_mill_gcode(layer_path, output_file="isolation1.nc", tool_dia=0.5, drill_depth=-0.1, travel_height=2.0):
+def generate_mill_gcode(file_path, output_file="isolation1.nc", tool_dia=0.5, drill_depth=-0.1, travel_height=2.0):
     try:
-        layer = gerber.read(layer_path)
+        # 1. Open the file manually to avoid the 'rU' mode error
+        with open(file_path, 'r') as f:
+            content = f.read()
+        # 2. Pass the string content to gerber.read
+        layer = gerber.loads(content)
     except Exception as e:
         print(f"Error: {e}")
         return False

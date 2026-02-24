@@ -97,27 +97,45 @@ class App:
             messagebox.showwarning("Cancelled", "No file selected.")
             return
 
-        base_name = os.path.splitext(os.path.basename(filepath))[0]
-        output_nc = f"{base_name}.nc"
-
         try:
+            # Step 1: Analyze / Plot the file
             if self.selected_mode == "ETCH":
-                # 1. Run mill.py logic (e.g., analyzing geometry)
-                plot_gerber(filepath) 
-                
-                # 2. Run mill_gcode.py logic
-                success = generate_mill_gcode(filepath, output_file=output_nc, tool_dia=0.5)
-                
+                plot_gerber(filepath)
             elif self.selected_mode == "DRILL":
-                # 1. Run drill.py logic (e.g., sorting hole sizes)
                 plot_excellon(filepath)
-                
-                # 2. Run drill_gcode.py logic
+
+            # Step 2: Ask user if they want to proceed
+            proceed = messagebox.askyesno(
+                title=f"{self.selected_mode} Confirmation",
+                message=f"Do you want to {self.selected_mode.lower()} this file?"
+            )
+
+            if not proceed:
+                messagebox.showinfo("Cancelled", f"{self.selected_mode} operation cancelled.")
+                return
+
+            # Step 3: Ask user where to save the G-code
+            base_name = os.path.splitext(os.path.basename(filepath))[0]
+            output_nc = filedialog.asksaveasfilename(
+                title="Save G-Code As",
+                initialfile=f"{base_name}.nc",
+                defaultextension=".nc",
+                filetypes=[("G-Code Files", "*.nc")]
+            )
+
+            if not output_nc:
+                messagebox.showwarning("Cancelled", "No save location selected.")
+                return
+
+            # Step 4: Generate G-code
+            if self.selected_mode == "ETCH":
+                success = generate_mill_gcode(filepath, output_file=output_nc, tool_dia=0.5)
+            elif self.selected_mode == "DRILL":
                 success = generate_drill_gcode(filepath, output_file=output_nc)
 
             if success:
                 messagebox.showinfo("Success", f"{self.selected_mode} G-Code saved as {output_nc}")
-                
+
         except Exception as e:
             messagebox.showerror("Execution Error", f"Error in {self.selected_mode} sequence:\n{str(e)}")
 

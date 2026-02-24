@@ -7,7 +7,11 @@ import matplotlib.patches as patches
 
 def plot_gerber(file_path):
     try:
-        layer = gerber.read(file_path)
+        # 1. Open the file manually to avoid the 'rU' mode error
+        with open(file_path, 'r') as f:
+            content = f.read()
+        # 2. Pass the string content to gerber.read
+        layer = gerber.loads(content)
     except Exception as e:
         print(f"Error: {e}")
         return False

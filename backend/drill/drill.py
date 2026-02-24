@@ -8,10 +8,16 @@ def plot_drill_layer(ax, file_path):
     Core logic: Reads an Excellon drill file and adds red circles to an existing axis.
     """
     try:
-        layer = gerber.read(file_path)
-        print(f"Reading Drill File: {file_path}")
+        # 1. Open the file manually to avoid the 'rU' mode error
+        with open(file_path, 'r') as f:
+            content = f.read()
+        # 2. Pass the string content to gerber.read
+        layer = gerber.loads(content)
         
-        for primitive in layer.primitives:
+    except Exception as e:
+        print(f"Error in plot_drill_layer: {e}")
+    
+    for primitive in layer.primitives:
             # Check for Circle type or position attribute
             if isinstance(primitive, Circle) or hasattr(primitive, 'position'):
                 pos = primitive.position
@@ -25,9 +31,7 @@ def plot_drill_layer(ax, file_path):
                 hole = patches.Circle(pos, d/2, color='red', fill=True, alpha=0.9, zorder=5)
                 ax.add_patch(hole)
                 
-        print(f"Successfully plotted {len(layer.primitives)} drill hits.")
-    except Exception as e:
-        print(f"Error in plot_drill_layer: {e}")
+    print(f"Successfully plotted {len(layer.primitives)} drill hits.")
 
 def plot_excellon(file_path):
     """
