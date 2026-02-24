@@ -1,9 +1,13 @@
 import gerber
 import math
 
-def generate_drill_gcode(layer_path, output_file="drill.nc", safe_z=2.0, drill_z=-1.8):
+def generate_drill_gcode(file_path, output_file="drill.nc", safe_z=2.0, drill_z=-1.8):
     try:
-        layer = gerber.read(layer_path)
+        # 1. Open the file manually to avoid the 'rU' mode error
+        with open(file_path, 'r') as f:
+            content = f.read()
+        # 2. Pass the string content to gerber.read
+        layer = gerber.loads(content)
     except Exception as e:
         print(f"Error reading file: {e}")
         return False

@@ -1,0 +1,7 @@
+v8 changes: updated all functions, good to deploy to rpi-4
+
+updated frontend/frontend.py
+updated backend/mill.py
+updated backend/mill_gcode.py
+updated backend/drill.py
+updated backend/drill_gcode.py
