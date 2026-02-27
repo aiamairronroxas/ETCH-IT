@@ -93,5 +93,3 @@ def generate_mill_gcode(file_path, output_file="isolation1.nc", tool_dia=0.5, dr
     print(f"Success! {len(optimized_paths)} paths optimized and saved.")
     return True
 
-# FOR TESTING PURPOSES ONLY
-generate_mill_gcode('copper_bottom.gbr')

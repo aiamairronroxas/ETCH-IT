@@ -55,6 +55,3 @@ def generate_drill_gcode(file_path, output_file="drill.nc", safe_z=2.0, drill_z=
     except Exception as e:
         print(f"Error: {e}")
         return False
-    
-# FOR TESTING PURPOSES ONLY
-# generate_drill_gcode('drill_1_16.xln')
