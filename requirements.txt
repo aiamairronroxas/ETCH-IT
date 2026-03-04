@@ -3,3 +3,4 @@ numpy==2.4.2
 pcb_tools==0.1.6
 Shapely==2.1.2
 Pillow
+pyserial==3.5
