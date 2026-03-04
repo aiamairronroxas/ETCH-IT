@@ -16,7 +16,10 @@ def get_pico_port():
         
         # 2. Filter: Only try ports that look like a Pico or USB Serial
         # Most grblHAL/Pico setups use these keywords in their description
-        if "USB Serial" in port.description or "Pico" in port.description or "CH340" in port.description:
+        desc = port.description or ""
+        dev = port.device or ""
+        
+        if "USB Serial" in desc or "Pico" in desc or "CH340" in desc or "ttyACM" in dev:
             try:
                 # 3. Quick test connection
                 test_s = serial.Serial(port.device, 115200, timeout=0.5)
@@ -85,10 +88,7 @@ def etch_gcode(file_path, logger):
             while True:
                 response = s.readline().decode('utf-8').strip()
                 if response == 'ok':
-                    # Optional: Log every 10 lines to avoid spamming the GUI
-                    if i % 10 == 0:
-                        log(f"Progress: {i+1}/{total} lines")
-                    break
+                    pass
                 elif 'error' in response.lower():
                     log(f"!!! G-CODE ERROR at line {i+1}: {response}")
                     break
