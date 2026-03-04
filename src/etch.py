@@ -58,22 +58,36 @@ def etch_gcode(file_path, logger):
     while s.in_waiting:
         s.readline() 
 
-    log("Sending Unlock Command ($X)...")
-    s.write(b"$X\n")
+    # --- NEW HOMING SECTION ---
+    log("Starting Homing Cycle ($H)... This may take a moment.")
+    s.write(b"$H\n")
     
-    success = False
-    timeout = time.time() + 3
-    while time.time() < timeout:
-        if s.in_waiting:
-            resp = s.readline().decode('utf-8').strip().lower()
-            if 'ok' in resp:
-                success = True
-                log("Machine Unlocked and Ready.")
-                break
+    homing_success = False
+    # Homing can take 30-60 seconds depending on machine size and speed
+    homing_timeout = time.time() + 60 
     
-    if not success:
-        log("ALARM: Failed to unlock. Check limit switches!")
+    while time.time() < homing_timeout:
+        response = s.readline().decode('utf-8').strip()
+        if response:
+            log(f"Pico: {response}") # Show homing progress/messages
+        
+        if 'ok' in response.lower():
+            homing_success = True
+            log("Homing Successful. Machine is zeroed.")
+            break
+        elif 'alarm' in response.lower() or 'error' in response.lower():
+            log(f"Homing Failed: {response}")
+            s.close()
+            return
+
+    if not homing_success:
+        log("Homing Timed Out. Check if a switch was actually hit.")
+        s.close()
         return
+    # ---------------------------
+
+    # Optional: Small delay after homing to let vibrations settle
+    time.sleep(1)
     
     with open(file_path, 'r') as file:
         lines = file.readlines()
