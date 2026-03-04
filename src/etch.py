@@ -29,7 +29,7 @@ def get_pico_port():
                 
     return None
 
-def select_and_run_gcode(file_path, logger):
+def etch_gcode(file_path, logger):
     # Helper to handle both GUI logging and terminal printing
     def log(msg):
         print(msg) # Still print to terminal for debugging
@@ -99,6 +99,3 @@ def select_and_run_gcode(file_path, logger):
 
     s.close()
     log("--- Etching Complete! ---")
-
-if __name__ == "__main__":
-    select_and_run_gcode()

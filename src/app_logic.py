@@ -9,7 +9,7 @@ from src.drill import plot_excellon
 from src.drill_gcode import generate_drill_gcode
 from src.mill import plot_gerber
 from src.mill_gcode import generate_mill_gcode
-from src.etch import select_and_run_gcode
+from src.etch import etch_gcode
 
 from .config import COLORS, FRAME_CONFIGS, APP_SETTINGS
 from .utils import draw_rounded_rect, apply_dark_title_bar
@@ -175,7 +175,7 @@ class EtchItApp:
         if not file_path:
             return
         try:
-            select_and_run_gcode(file_path, logger=self.log_message)
+            etch_gcode(file_path, logger=self.log_message)
         except Exception as e:
             self.log_message(f"ETCH ERROR: {str(e)}")
             messagebox.showerror("Etch Error", str(e))
