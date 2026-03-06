@@ -9,6 +9,7 @@ from src.drill import plot_excellon
 from src.drill_gcode import generate_drill_gcode
 from src.mill import plot_gerber
 from src.mill_gcode import generate_mill_gcode
+from src.etch import etch_gcode
 
 from .config import COLORS, FRAME_CONFIGS, APP_SETTINGS
 from .utils import draw_rounded_rect, apply_dark_title_bar
@@ -167,6 +168,18 @@ class EtchItApp:
             self.log_message(f"GEN ERROR: {str(e)}")
             messagebox.showerror("Generation Error", str(e))
 
+    # --- PLACE ETCH FUNCTION HERE ---
+
+    def on_etch_click(self, event=None):
+        file_path = filedialog.askopenfilename(filetypes=[("G-Code", "*.nc;*.gcode")])
+        if not file_path:
+            return
+        try:
+            etch_gcode(file_path, logger=self.log_message)
+        except Exception as e:
+            self.log_message(f"ETCH ERROR: {str(e)}")
+            messagebox.showerror("Etch Error", str(e))
+
     # --- UI DRAWING METHODS ---
     def draw_f1_content(self):
         self.mid_canvas.delete("all")
@@ -225,7 +238,7 @@ class EtchItApp:
         if hasattr(self, 'f3_icon_img'):
             self.mid_canvas3.create_image(start_x + (f["icon_size"][0]/2), f["height"]/2, image=self.f3_icon_img)
         self.mid_canvas3.create_text(start_x + f["icon_size"][0] + f["spacing"], f["height"]/2, text=f["text"], fill=f["text_color"], font=f["font"], anchor="w")
-        self.mid_canvas3.bind("<Button-1>", lambda e: self.log_message("CNC Sequence triggered..."))
+        self.mid_canvas3.bind("<Button-1>", self.on_etch_click)
         self.mid_canvas3.bind("<Enter>", lambda e: self.draw_f3_button(hover=True))
         self.mid_canvas3.bind("<Leave>", lambda e: self.draw_f3_button(hover=False))
 
