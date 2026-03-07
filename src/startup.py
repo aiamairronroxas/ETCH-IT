@@ -61,28 +61,6 @@ def run_full_startup(logger_func):
                     logger_func(f"HOMING ERROR: {line}")
                     return False
 
-            # 4. Probe PCB (Safety Step)
-            #if messagebox.askyesno("Probe Setup", "Homing complete.\n\nAttach probe clip to bit and place touch plate on PCB. Ready?"):
-            #    logger_func("Probing Z-Axis...")
-                # G38.2: Seek | G10 L20: Set Work Zero | G0: Retract
-                # Assuming 1.6mm touch plate thickness
-            #    probe_commands = [
-            #        "G38.2 Z-20 F50\n",
-            #        "G10 L20 P1 Z1.6\n", 
-            #        "G0 Z5\n"
-            #    ]
-                
-            #    for cmd in probe_commands:
-            #        ser.write(cmd.encode())
-            #        # Wait for each command to finish
-            #        while True:
-            #            resp = ser.readline().decode().strip()
-            #            if "ok" in resp: break
-                
-            #    logger_func("Z-Zero established at PCB surface.")
-            #else:
-            #    logger_func("WARNING: Probing skipped. Manual Z-Zero required.")
-
             logger_func("READY FOR SESSION.")
             return port
 
