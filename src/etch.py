@@ -1,115 +1,103 @@
 import serial
 import time
-import serial.tools.list_ports
-import sys
+import os
+from tkinter import messagebox
 
-def get_pico_port():
-    # 1. Get a list of all available COM ports
-    available_ports = serial.tools.list_ports.comports()
-    
-    if not available_ports:
-        print("No COM ports detected. Is the Pico plugged in?")
-        return None
+# --- CONFIGURATION ---
+# SAFE_Z is still useful to ensure the bit lifts before moving to the start point
+SAFE_Z = 2.0  
 
-    for port in available_ports:
-        print(f"Checking: {port.device} - {port.description}")
-        
-        # 2. Filter: Only try ports that look like a Pico or USB Serial
-        # Most grblHAL/Pico setups use these keywords in their description
-        desc = port.description or ""
-        dev = port.device or ""
-        
-        if "USB Serial" in desc or "Pico" in desc or "CH340" in desc or "ttyACM" in dev:
-            try:
-                # 3. Quick test connection
-                test_s = serial.Serial(port.device, 115200, timeout=0.5)
-                test_s.write(b"\r\n") # Wake it up
-                time.sleep(1)
-                test_s.close()
-                return port.device # Success!
-            except (serial.SerialException, PermissionError):
-                continue # Port is busy or restricted
-                
-    return None
-
-def etch_gcode(file_path, logger):
-    # Helper to handle both GUI logging and terminal printing
+def etch_gcode(file_path, logger, pico_port):
+    """
+    pico_port: The COM/tty port identified during startup.
+    """
     def log(msg):
-        print(msg) # Still print to terminal for debugging
+        print(msg)
         if logger:
             logger(msg)
 
-    # 1. Connect (Check your COM port in Device Manager!)
+    # --- 1. OPEN SERIAL CONNECTION ---
     try:
-        pico_port = get_pico_port()
         if not pico_port:
-            log("Error: No Pico W detected on any COM/TTY port.")
+            log("Error: No Pico W port detected. Did the startup finish?")
             return
-            
+        
+        # Open port (Homing and Probing are handled elsewhere)
         s = serial.Serial(pico_port, 115200, timeout=1)
     except Exception as e:
-        log(f"Could not open port: {e}")
+        log(f"Could not open port {pico_port}: {e}")
         return
-    
-    log("Initializing Pico...")
+
+    # Clear buffers
+    log("Connecting to Pico...")
     s.write(b"\n")
-    time.sleep(1)
-    
-    while s.in_waiting:
-        s.readline() 
+    time.sleep(0.5)
+    while s.in_waiting: s.readline() 
 
-    # --- NEW HOMING SECTION ---
-    log("Starting Homing Cycle ($H)... This may take a moment.")
-    s.write(b"$H\n")
+    # --- 2. ENSURE SAFE HEIGHT ---
+    log(f"Lifting to Safe Height ({SAFE_Z}mm)...")
+    # Sending G90 ensures the machine is in Absolute mode before moving
+    s.write(f"G90\nG0 Z{SAFE_Z}\n".encode()) 
     
-    homing_success = False
-    # Homing can take 30-60 seconds depending on machine size and speed
-    homing_timeout = time.time() + 60 
-    
-    while time.time() < homing_timeout:
-        response = s.readline().decode('utf-8').strip()
-        if response:
-            log(f"Pico: {response}") # Show homing progress/messages
-        
-        if 'ok' in response.lower():
-            homing_success = True
-            log("Homing Successful. Machine is zeroed.")
+    # Wait for 'ok' to ensure the bit is actually up before the popup appears
+    while True:
+        line = s.readline().decode('utf-8').strip()
+        if line == 'ok': 
             break
-        elif 'alarm' in response.lower() or 'error' in response.lower():
-            log(f"Homing Failed: {response}")
-            s.close()
-            return
 
-    if not homing_success:
-        log("Homing Timed Out. Check if a switch was actually hit.")
-        s.close()
-        return
-    # ---------------------------
+    s.write(b"$H\n") # This forces the machine to home automatically
+    log("Homing machine to sync G10 offsets...")
+    while True:
+        if s.readline().decode('utf-8').strip() == 'ok': break
 
-    # Optional: Small delay after homing to let vibrations settle
-    time.sleep(1)
+    # --- 3. SPINDLE START DIALOG ---
+    # This pauses the script before any G-code is read
+    log("Awaiting spindle start...")
+    messagebox.showinfo("Start Spindle", 
+        "The bit is at a safe height.\n\n"
+        "1. Manually turn ON the drill spindle.\n"
+        "2. Ensure any obstacles are clear.\n"
+        "3. Click OK to begin etching.")
+
+    # --- 4. STREAM G-CODE ---
+    log(f"Streaming: {os.path.basename(file_path)}")
     
     with open(file_path, 'r') as file:
-        lines = file.readlines()
-        total = len(lines)
-        
-        for i, line in enumerate(lines):
+        for line in file:
             l = line.strip()
-            if not l or l.startswith('('): continue 
             
+            # Skip empty lines and comments
+            if not l or l.startswith('('): 
+                continue 
+            
+            # Send line to Pico
             s.write((l + '\n').encode('utf-8'))
             
+            # Wait for 'ok' before sending next line
             while True:
                 response = s.readline().decode('utf-8').strip()
-                if response == 'ok':
-                    pass
-                elif 'error' in response.lower():
-                    log(f"!!! G-CODE ERROR at line {i+1}: {response}")
+                if response == 'ok': 
                     break
-                elif 'ALARM' in response:
-                    log(f"!!! HARD ALARM: {response}")
+                elif 'error' in response.lower() or 'ALARM' in response:
+                    log(f"ALARM/ERROR: {response}")
+                    log("Aborting Job.")
                     s.close()
                     return
 
-    s.close()
-    log("--- Etching Complete! ---")
+    # --- 5. WAIT FOR PHYSICAL COMPLETION ---
+    log("File sent. Waiting for machine to reach Idle state...")
+    while True:
+        s.write(b"?") # Query GRBL status
+        time.sleep(0.3)
+        if s.in_waiting:
+            status = s.readline().decode('utf-8').strip()
+            if 'Idle' in status:
+                log("Machine finished moving.")
+                break
+
+    # --- 6. FINISH ---
+    # Move back to origin after job? (Optional)
+    # s.write(b"G0 X0 Y0\n")
+    
+    s.close() 
+    log("--- Etching Process Complete ---")
