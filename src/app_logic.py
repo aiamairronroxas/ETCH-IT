@@ -10,6 +10,7 @@ from src.drill_gcode import generate_drill_gcode
 from src.mill import plot_gerber
 from src.mill_gcode import generate_mill_gcode
 from src.etch import etch_gcode
+from src.startup import run_full_startup
 
 from .config import COLORS, FRAME_CONFIGS, APP_SETTINGS
 from .utils import draw_rounded_rect, apply_dark_title_bar
@@ -103,7 +104,22 @@ class EtchItApp:
         self.typewriter_effect(0)
         self.root.after(100, self.sync_sidebar_buttons)
 
+        self.pico_port = None  # <--- Initialize the storage variable
+        
         self.log_message("System Initialized... Ready for input.")
+
+        self.root.after(3000, lambda: run_full_startup(self.log_message))
+
+    def initialize_machine(self):
+        """Wrapper to capture the port from the startup script"""
+        # Call the function from your startup.py
+        result = run_full_startup(self.log_message)
+        
+        if result:
+            self.pico_port = result  # Now the port is saved in the class!
+            self.log_message(f"Port {self.pico_port} saved for session.")
+        else:
+            self.log_message("Hardware initialization failed.")
 
     # --- CORE LOGIC HELPER ---
     def get_file_and_mode(self):
@@ -154,28 +170,49 @@ class EtchItApp:
 
         if not output_nc: return
 
-        self.log_message(f"Generating G-Code for {mode}...")
+        # Log start of process locally in the UI
+        self.log_message(f"--- Starting {mode} Generation ---")
+        
         try:
             if mode == "ETCH":
-                success = generate_mill_gcode(filepath, output_file=output_nc)
+                # Pass self.log_message so generate_mill_gcode can talk to your UI
+                # tool_dia is hardcoded to 0.2 inside or passed here
+                success = generate_mill_gcode(
+                    filepath, 
+                    logger=self.log_message, 
+                    output_file=output_nc,
+                    tool_dia=0.2
+                )
             else:
+                # If you update generate_drill_gcode later, add logger=self.log_message there too
                 success = generate_drill_gcode(filepath, output_file=output_nc)
 
             if success:
-                self.log_message(f"SUCCESS: G-Code saved to {os.path.basename(output_nc)}")
+                self.log_message(f"FILE SAVED: {os.path.basename(output_nc)}")
                 messagebox.showinfo("Success", f"{mode} G-Code saved successfully!")
+            else:
+                # If success is False, the collision error has already been printed to your logs
+                messagebox.showwarning("Generation Failed", "Collision detected or file error. Check logs.")
+
         except Exception as e:
-            self.log_message(f"GEN ERROR: {str(e)}")
-            messagebox.showerror("Generation Error", str(e))
+            self.log_message(f"CRITICAL GEN ERROR: {str(e)}")
+            messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
 
     # --- PLACE ETCH FUNCTION HERE ---
 
     def on_etch_click(self, event=None):
+        # Safety check: Ensure the machine was actually initialized
+        if not self.pico_port:
+            messagebox.showwarning("Connection Error", "Machine not initialized. Please check USB and restart.")
+            return
+
         file_path = filedialog.askopenfilename(filetypes=[("G-Code", "*.nc;*.gcode")])
         if not file_path:
             return
+
         try:
-            etch_gcode(file_path, logger=self.log_message)
+            # Pass the saved port here --------------------------v
+            etch_gcode(file_path, logger=self.log_message, pico_port=self.pico_port)
         except Exception as e:
             self.log_message(f"ETCH ERROR: {str(e)}")
             messagebox.showerror("Etch Error", str(e))
