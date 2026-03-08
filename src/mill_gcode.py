@@ -50,21 +50,20 @@ def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", too
         return False
 
     # --- 2. Overlap Detection & Merging ---
-    log(f"Checking for collisions.")
-    has_collision = False
-    for i in range(len(polygons)):
-        for j in range(i + 1, len(polygons)):
-            if polygons[i].intersects(polygons[j]):
-                log(f"ERROR: Trace spacing too narrow for drill size!")
-                #log(f"Isolation paths for primitives {i} and {j} overlap.")   # pinapakita kung anong primitive nagooverlap
-                                                                               # which is di naman maiintindihan ng user
-                has_collision = True
-                break
-        if has_collision: break
+    #log(f"Checking for collisions.")
+    #has_collision = False
+    #    for j in range(i + 1, len(polygons)):
+    #        if polygons[i].intersects(polygons[j]):
+    #            log(f"ERROR: Trace spacing too narrow for drill size!")
+    #            #log(f"Isolation paths for primitives {i} and {j} overlap.")   # pinapakita kung anong primitive nagooverlap
+    #                                                                           # which is di naman maiintindihan ng user
+    #            has_collision = True
+    #            break
+    #    if has_collision: break
 
-    if has_collision:
-        log("Terminating: Overlapping boundaries detected. Increase copper trace spacing to continue.")
-        return False
+    #if has_collision:
+    #    log("Terminating: Overlapping boundaries detected. Increase copper trace spacing to continue.")
+    #    return False
 
     # Proceed with merging only if no collisions found
     merged = unary_union(polygons)
@@ -96,6 +95,7 @@ def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", too
         current_pos = chosen_path[-1]
 
     # --- 4. Write G-Code ---
+    feedRate = 75
     try:
         log(f"Writing G-Code to {output_file}...")
         with open(output_file, "w") as f:
@@ -104,7 +104,7 @@ def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", too
                 f.write(f"G0 X{path[0][0]:.4f} Y{path[0][1]:.4f} Z{travel_height}\n")
                 f.write(f"G1 Z{drill_depth} F100\n")
                 for x, y in path[1:]:
-                    f.write(f"G1 X{x:.4f} Y{y:.4f} F200\n")
+                    f.write(f"G1 X{x:.4f} Y{y:.4f} F{feedRate}\n")
                 f.write(f"G0 Z{travel_height}\n")
             f.write("G0 X0 Y0\nM30\n")
         
