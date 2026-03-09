@@ -1,7 +1,7 @@
 import gerber
 import math
 
-def generate_drill_gcode(file_path, output_file="drill.nc", safe_z=2.0, drill_z=-1.8):
+def generate_drill_gcode(file_path, output_file="drill.nc", safe_z=2.0, drill_z=-1.45):
     try:
         # 1. Open the file manually to avoid the 'rU' mode error
         with open(file_path, 'r') as f:
