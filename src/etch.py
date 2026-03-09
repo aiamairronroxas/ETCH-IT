@@ -1,103 +1,125 @@
 import serial
+import serial.tools.list_ports
 import time
 import os
 from tkinter import messagebox
 
 # --- CONFIGURATION ---
-# SAFE_Z is still useful to ensure the bit lifts before moving to the start point
 SAFE_Z = 2.0  
 
-def etch_gcode(file_path, logger, pico_port):
-    """
-    pico_port: The COM/tty port identified during startup.
-    """
+def get_pico_port():
+    """Scans for the Pico W or CH340 serial port."""
+    available_ports = serial.tools.list_ports.comports()
+    for port in available_ports:
+        desc = port.description or ""
+        dev = port.device or ""
+        # Targets Raspberry Pi Pico, CH340, and Linux ttyACM devices
+        if any(x in desc or x in dev for x in ["USB Serial", "Pico", "CH340", "ttyACM"]):
+            try:
+                # Test accessibility
+                with serial.Serial(port.device, 115200, timeout=0.5) as test_s:
+                    return port.device
+            except (serial.SerialException, PermissionError):
+                continue
+    return None
+
+def etch_gcode(file_path, logger=None):
     def log(msg):
         print(msg)
-        if logger:
-            logger(msg)
+        if logger: logger(msg)
 
-    # --- 1. OPEN SERIAL CONNECTION ---
-    try:
-        if not pico_port:
-            log("Error: No Pico W port detected. Did the startup finish?")
-            return
-        
-        # Open port (Homing and Probing are handled elsewhere)
-        s = serial.Serial(pico_port, 115200, timeout=1)
-    except Exception as e:
-        log(f"Could not open port {pico_port}: {e}")
+    pico_port = get_pico_port()
+    if not pico_port:
+        log("Error: No Pico W detected.")
+        messagebox.showerror("Connection Error", "Pico W port not found.")
         return
 
-    # Clear buffers
-    log("Connecting to Pico...")
-    s.write(b"\n")
-    time.sleep(0.5)
-    while s.in_waiting: s.readline() 
+    try:
+        with serial.Serial(pico_port, 115200, timeout=1) as s:
+            # --- INITIALIZE ---
+            s.write(b"\r\n\r\n")
+            time.sleep(1)
+            s.reset_input_buffer() 
 
-    # --- 2. ENSURE SAFE HEIGHT ---
-    log(f"Lifting to Safe Height ({SAFE_Z}mm)...")
-    # Sending G90 ensures the machine is in Absolute mode before moving
-    s.write(f"G90\nG0 Z{SAFE_Z}\n".encode()) 
-    
-    # Wait for 'ok' to ensure the bit is actually up before the popup appears
-    while True:
-        line = s.readline().decode('utf-8').strip()
-        if line == 'ok': 
-            break
+            log(f"Lifting to Safe Height ({SAFE_Z}mm)...")
+            s.write(f"G90\nG0 Z{SAFE_Z}\n".encode()) 
+            while 'ok' not in s.readline().decode('utf-8').strip(): pass
 
-    s.write(b"$H\n") # This forces the machine to home automatically
-    log("Homing machine to sync G10 offsets...")
-    while True:
-        if s.readline().decode('utf-8').strip() == 'ok': break
+            # --- USER START ---
+            messagebox.showinfo("Start Spindle", 
+                                "1. Turn ON spindle.\n" \
+                                "2. Click OK to start timer and etching.")
 
-    # --- 3. SPINDLE START DIALOG ---
-    # This pauses the script before any G-code is read
-    log("Awaiting spindle start...")
-    messagebox.showinfo("Start Spindle", 
-        "The bit is at a safe height.\n\n"
-        "1. Manually turn ON the drill spindle.\n"
-        "2. Ensure any obstacles are clear.\n"
-        "3. Click OK to begin etching.")
+            # START TIMER
+            start_time = time.time()
+            log("Timer started.")
 
-    # --- 4. STREAM G-CODE ---
-    log(f"Streaming: {os.path.basename(file_path)}")
-    
-    with open(file_path, 'r') as file:
-        for line in file:
-            l = line.strip()
-            
-            # Skip empty lines and comments
-            if not l or l.startswith('('): 
-                continue 
-            
-            # Send line to Pico
-            s.write((l + '\n').encode('utf-8'))
-            
-            # Wait for 'ok' before sending next line
+            # STREAM G-CODE
+            with open(file_path, 'r') as file:
+                for line in file:
+                    clean_line = line.strip()
+                    if not clean_line or clean_line.startswith('('): 
+                        continue 
+                    
+                    # Send line to Pico
+                    s.write((clean_line + '\n').encode('utf-8'))
+                    
+                    # Wait for Pico to acknowledge (the 'ok' response)
+                    while True:
+                        res = s.readline().decode('utf-8').strip()
+                        if 'ok' in res: 
+                            break
+                        elif 'error' in res.lower() or 'ALARM' in res:
+                            log(f"CRITICAL ERROR: {res}")
+                            return
+
+            # --- WAIT FOR IDLE (The "Busy" Check) ---
+            log("Job streamed. Waiting for physical completion...")
             while True:
-                response = s.readline().decode('utf-8').strip()
-                if response == 'ok': 
+                s.write(b"?") 
+                status = s.readline().decode('utf-8')
+                if 'Idle' in status:
                     break
-                elif 'error' in response.lower() or 'ALARM' in response:
-                    log(f"ALARM/ERROR: {response}")
-                    log("Aborting Job.")
-                    s.close()
-                    return
+                time.sleep(0.5) # Poll every half second to keep serial traffic low
 
-    # --- 5. WAIT FOR PHYSICAL COMPLETION ---
-    log("File sent. Waiting for machine to reach Idle state...")
-    while True:
-        s.write(b"?") # Query GRBL status
-        time.sleep(0.3)
-        if s.in_waiting:
-            status = s.readline().decode('utf-8').strip()
-            if 'Idle' in status:
-                log("Machine finished moving.")
-                break
+            # STOP TIMER
+            end_time = time.time()
+            duration = end_time - start_time
+            log(f"Job finished in {duration:.2f} seconds.")
 
-    # --- 6. FINISH ---
-    # Move back to origin after job? (Optional)
-    # s.write(b"G0 X0 Y0\n")
-    
-    s.close() 
-    log("--- Etching Process Complete ---")
+            # --- FILE PERSISTENCE LOGIC ---
+
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            count_file = os.path.join(script_dir, "count.txt")
+            current_total = 0.0
+
+            # 1. Read existing value
+            if os.path.exists(count_file):
+                with open(count_file, 'r') as f:
+                    content = f.read().strip()
+                    if content:
+                        try:
+                            current_total = float(content)
+                        except ValueError:
+                            current_total = 0.0
+            
+            # 2. Add duration and save
+            new_total = current_total + duration
+            with open(count_file, 'w') as f:
+                f.write(f"{new_total:.2f}")
+                f.flush()            # Pushes data out of Python
+                os.fsync(f.fileno()) # Pushes data to the physical disk
+
+            log(f"Total cumulative time in count.txt: {new_total:.2f} seconds.")
+
+            try:
+                #from backup.maintenance import check_machine_runtime   # USE ONLY ON RPI 4B
+                #check_machine_runtime()                                # This updates the LED based on the new total
+                print("wow")
+            except Exception as e:
+                log(f"Maintenance Check Error: {e}")
+
+    except Exception as e:
+        log(f"Error: {e}")
+
+    log("--- Process Complete ---")

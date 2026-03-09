@@ -3,8 +3,10 @@ from gerber.primitives import Line, Circle, Rectangle, Region
 import shapely.geometry as geom
 from shapely.ops import unary_union
 import math
+from tkinter import messagebox
 
-def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", tool_dia=0.5, drill_depth=-0.1, travel_height=2.0):
+
+def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", tool_dia=0.5, drill_depth=-0.005, travel_height=2.0):
     # Helper to handle both GUI logging and terminal printing
     def log(msg):
         print(msg)  # Still print to terminal for debugging
@@ -16,7 +18,7 @@ def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", too
         with open(file_path, 'r') as f:
             content = f.read()
         layer = gerber.loads(content)
-        log(f"Successfully loaded {len(layer.primitives)} Gerber primitives.")
+        print(f"Successfully loaded {len(layer.primitives)} Gerber primitives.")
     except Exception as e:
         log(f"Error loading Gerber: {e}")
         return False
@@ -50,22 +52,34 @@ def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", too
         return False
 
     # --- 2. Overlap Detection & Merging ---
-    #log(f"Checking for collisions.")
-    #has_collision = False
-    #    for j in range(i + 1, len(polygons)):
-    #        if polygons[i].intersects(polygons[j]):
-    #            log(f"ERROR: Trace spacing too narrow for drill size!")
-    #            #log(f"Isolation paths for primitives {i} and {j} overlap.")   # pinapakita kung anong primitive nagooverlap
-    #                                                                           # which is di naman maiintindihan ng user
-    #            has_collision = True
-    #            break
-    #    if has_collision: break
+    log("Checking for potential toolpath collisions...")
+    has_collision = False
+    
+    # Check for collisions across all polygons
+    for i in range(len(polygons)):
+        for j in range(i + 1, len(polygons)):
+            if polygons[i].intersects(polygons[j]):
+                has_collision = True
+                break
+        if has_collision: break
 
-    #if has_collision:
-    #    log("Terminating: Overlapping boundaries detected. Increase copper trace spacing to continue.")
-    #    return False
+    if has_collision:
+        log("WARNING: Trace spacing too narrow for drill size.")
+        # Trigger the dialog box
+        user_choice = messagebox.askyesno(
+            "Collision Warning", 
+            "The tool diameter is too large for the current trace spacing. "
+            "Collisions detected!\n\n"
+            "The output will deviate from your intended design (traces may be merged). "
+            "Do you want to proceed anyway?"
+        )
+        if not user_choice:
+            log("Process terminated by user due to collisions.")
+            return False
+        else:
+            log("User chose to proceed despite collisions. Proceeding with merge...")
 
-    # Proceed with merging only if no collisions found
+    # Proceed with merging (unary_union will handle the overlapping geometry)
     merged = unary_union(polygons)
     raw_paths = []
     
@@ -77,7 +91,7 @@ def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", too
                 raw_paths.append(list(interior.coords))
 
     # --- 3. Traveling Salesman Optimization ---
-    log(f"Optimizing {len(raw_paths)} toolpaths for shortest travel...")
+    print(f"Optimizing {len(raw_paths)} toolpaths for shortest travel...")
     optimized_paths = []
     current_pos = (0, 0)
 
@@ -95,9 +109,9 @@ def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", too
         current_pos = chosen_path[-1]
 
     # --- 4. Write G-Code ---
-    feedRate = 75
+    feedRate = 50
     try:
-        log(f"Writing G-Code to {output_file}...")
+        print(f"Writing G-Code to {output_file}...")
         with open(output_file, "w") as f:
             f.write("G21 ; mm\nG90 ; Absolute\nM3 S1000 ; Spindle ON\n")
             for path in optimized_paths:
@@ -108,7 +122,7 @@ def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", too
                 f.write(f"G0 Z{travel_height}\n")
             f.write("G0 X0 Y0\nM30\n")
         
-        log(f"Success! G-Code saved. Total paths: {len(optimized_paths)}")
+        print(f"Success! G-Code saved. Total paths: {len(optimized_paths)}")
         return True
     except Exception as e:
         log(f"File writing error: {e}")

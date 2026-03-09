@@ -3,6 +3,8 @@ from tkinter import font, filedialog, messagebox
 from PIL import Image, ImageTk
 from datetime import datetime
 import os
+import threading
+
 
 # Import your existing backend functions
 from src.drill import plot_excellon
@@ -10,7 +12,7 @@ from src.drill_gcode import generate_drill_gcode
 from src.mill import plot_gerber
 from src.mill_gcode import generate_mill_gcode
 from src.etch import etch_gcode
-from src.startup import run_full_startup
+#from backup.maintenance import check_machine_runtime  #USE THIS ONLY ON PI 4B
 
 from .config import COLORS, FRAME_CONFIGS, APP_SETTINGS
 from .utils import draw_rounded_rect, apply_dark_title_bar
@@ -103,23 +105,10 @@ class EtchItApp:
         self.current_phrase_index = 0
         self.typewriter_effect(0)
         self.root.after(100, self.sync_sidebar_buttons)
-
-        self.pico_port = None  # <--- Initialize the storage variable
         
         self.log_message("System Initialized... Ready for input.")
 
-        self.root.after(3000, lambda: run_full_startup(self.log_message))
-
-    def initialize_machine(self):
-        """Wrapper to capture the port from the startup script"""
-        # Call the function from your startup.py
-        result = run_full_startup(self.log_message)
-        
-        if result:
-            self.pico_port = result  # Now the port is saved in the class!
-            self.log_message(f"Port {self.pico_port} saved for session.")
-        else:
-            self.log_message("Hardware initialization failed.")
+        #self.root.after(3500, lambda: check_machine_runtime())              # RUN THIS ONLY ON RPI 4B
 
     # --- CORE LOGIC HELPER ---
     def get_file_and_mode(self):
@@ -201,21 +190,19 @@ class EtchItApp:
     # --- PLACE ETCH FUNCTION HERE ---
 
     def on_etch_click(self, event=None):
-        # Safety check: Ensure the machine was actually initialized
-        if not self.pico_port:
-            messagebox.showwarning("Connection Error", "Machine not initialized. Please check USB and restart.")
-            return
-
         file_path = filedialog.askopenfilename(filetypes=[("G-Code", "*.nc;*.gcode")])
-        if not file_path:
-            return
+        if not file_path: return
 
-        try:
-            # Pass the saved port here --------------------------v
-            etch_gcode(file_path, logger=self.log_message, pico_port=self.pico_port)
-        except Exception as e:
-            self.log_message(f"ETCH ERROR: {str(e)}")
-            messagebox.showerror("Etch Error", str(e))
+        # We wrap the etch_gcode in a thread
+        # This lets the function run in the background 
+        # while the Tkinter GUI stays "alive" and interactive.
+        etch_thread = threading.Thread(target=self.run_background_etch, args=(file_path,))
+        etch_thread.daemon = True  # If you close the app, the thread closes too
+        etch_thread.start()
+
+    def run_background_etch(self, file_path):
+        # This runs in the background
+        etch_gcode(file_path, logger=self.log_message)
 
     # --- UI DRAWING METHODS ---
     def draw_f1_content(self):

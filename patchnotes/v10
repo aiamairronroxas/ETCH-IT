@@ -2,5 +2,5 @@ v10 changes: added etch function, updated app logic, added package requirement
 
 Added etch_gcode() function to control DRV8825 motors
 Updated app_logic to accomodate etch_gcode()
-Updated requirements.txt to include pyserial package
+Updated requirements.$txt to include pyserial package
 Added count.txt for tracking device usage
