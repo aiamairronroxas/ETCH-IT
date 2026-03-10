@@ -108,7 +108,7 @@ class EtchItApp:
         
         self.log_message("System Initialized... Ready for input.")
 
-        #self.root.after(3500, lambda: check_machine_runtime())              # RUN THIS ONLY ON RPI 4B
+        # self.root.after(3500, lambda: check_machine_runtime(logger=self.log_message))              # RUN THIS ONLY ON RPI 4B
 
     # --- CORE LOGIC HELPER ---
     def get_file_and_mode(self):
@@ -174,6 +174,7 @@ class EtchItApp:
                 )
             else:
                 # If you update generate_drill_gcode later, add logger=self.log_message there too
+                mode = "DRILL"
                 success = generate_drill_gcode(filepath, output_file=output_nc)
 
             if success:

@@ -6,7 +6,7 @@ import math
 from tkinter import messagebox
 
 
-def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", tool_dia=0.5, drill_depth=-0.005, travel_height=2.0):
+def generate_mill_gcode(file_path, logger=None, output_file="mill.nc", tool_dia=0.5, drill_depth=-0.005, travel_height=2.0):
     # Helper to handle both GUI logging and terminal printing
     def log(msg):
         print(msg)  # Still print to terminal for debugging
@@ -109,7 +109,7 @@ def generate_mill_gcode(file_path, logger=None, output_file="isolation1.nc", too
         current_pos = chosen_path[-1]
 
     # --- 4. Write G-Code ---
-    feedRate = 50
+    feedRate = 25
     try:
         print(f"Writing G-Code to {output_file}...")
         with open(output_file, "w") as f:

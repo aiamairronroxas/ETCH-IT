@@ -28,6 +28,20 @@ def etch_gcode(file_path, logger=None):
         print(msg)
         if logger: logger(msg)
 
+    # --- 1. IDENTIFY TOOLING FOR DIALOGUE & LOGGING ---
+    if file_path.lower().endswith("_drill.nc"):
+        bit_string = "is a drill bit"
+        target_file = "drillcount.txt"
+        tool_label = "Drill"
+    elif file_path.lower().endswith("_etch.nc"):
+        bit_string = "is a milling bit"
+        target_file = "millcount.txt"
+        tool_label = "Mill"
+    else:
+        bit_string = "is appropriate for the job"
+        target_file = None # We won't log maintenance for unknown files
+        tool_label = "Unknown"
+
     pico_port = get_pico_port()
     if not pico_port:
         log("Error: No Pico W detected.")
@@ -45,10 +59,11 @@ def etch_gcode(file_path, logger=None):
             s.write(f"G90\nG0 Z{SAFE_Z}\n".encode()) 
             while 'ok' not in s.readline().decode('utf-8').strip(): pass
 
-            # --- USER START ---
-            messagebox.showinfo("Start Spindle", 
-                                "1. Turn ON spindle.\n" \
-                                "2. Click OK to start timer and etching.")
+            # --- DYNAMIC USER START ---
+            messagebox.showinfo("Before we start..", 
+                                f"1. Make sure that the mounted bit {bit_string}.\n\n"
+                                "2. Turn ON spindle.\n"
+                                "3. Click OK to start timer and etching.")
 
             # START TIMER
             start_time = time.time()
@@ -61,10 +76,7 @@ def etch_gcode(file_path, logger=None):
                     if not clean_line or clean_line.startswith('('): 
                         continue 
                     
-                    # Send line to Pico
                     s.write((clean_line + '\n').encode('utf-8'))
-                    
-                    # Wait for Pico to acknowledge (the 'ok' response)
                     while True:
                         res = s.readline().decode('utf-8').strip()
                         if 'ok' in res: 
@@ -73,53 +85,54 @@ def etch_gcode(file_path, logger=None):
                             log(f"CRITICAL ERROR: {res}")
                             return
 
-            # --- WAIT FOR IDLE (The "Busy" Check) ---
+            # --- WAIT FOR IDLE ---
             log("Job streamed. Waiting for physical completion...")
             while True:
                 s.write(b"?") 
                 status = s.readline().decode('utf-8')
                 if 'Idle' in status:
                     break
-                time.sleep(0.5) # Poll every half second to keep serial traffic low
+                time.sleep(0.5)
 
             # STOP TIMER
             end_time = time.time()
             duration = end_time - start_time
             log(f"Job finished in {duration:.2f} seconds.")
 
-            # --- FILE PERSISTENCE LOGIC ---
+            # --- PERSISTENCE LOGIC ---
+            if target_file:
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                count_file_path = os.path.join(script_dir, target_file)
+                current_total = 0.0
 
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            count_file = os.path.join(script_dir, "count.txt")
-            current_total = 0.0
+                if os.path.exists(count_file_path):
+                    try:
+                        with open(count_file_path, 'r') as f:
+                            content = f.read().strip()
+                            current_total = float(content) if content else 0.0
+                    except ValueError:
+                        current_total = 0.0
 
-            # 1. Read existing value
-            if os.path.exists(count_file):
-                with open(count_file, 'r') as f:
-                    content = f.read().strip()
-                    if content:
-                        try:
-                            current_total = float(content)
-                        except ValueError:
-                            current_total = 0.0
-            
-            # 2. Add duration and save
-            new_total = current_total + duration
-            with open(count_file, 'w') as f:
-                f.write(f"{new_total:.2f}")
-                f.flush()            # Pushes data out of Python
-                os.fsync(f.fileno()) # Pushes data to the physical disk
+                new_total = current_total + duration
+                try:
+                    with open(count_file_path, 'w') as f:
+                        f.write(f"{new_total:.2f}")
+                        f.flush()
+                        os.fsync(f.fileno()) 
+                    log(f"{tool_label} updated. Total: {new_total:.2f}s")
+                except Exception as e:
+                    log(f"File Save Error: {e}")
 
-            log(f"Total cumulative time in count.txt: {new_total:.2f} seconds.")
-
-            try:
-                #from backup.maintenance import check_machine_runtime   # USE ONLY ON RPI 4B
-                #check_machine_runtime()                                # This updates the LED based on the new total
-                print("wow")
-            except Exception as e:
-                log(f"Maintenance Check Error: {e}")
+                # Trigger Maintenance LED                             #USE THIS ONLY ON RPI 4B
+                #try:
+                #    from maintenance import check_machine_runtime
+                #    check_machine_runtime(logger=log) 
+                #except Exception as e:
+                #    log(f"Maintenance LED Check Error: {e}")
+            else:
+                log("Unknown file type. Duration not added to maintenance.")
 
     except Exception as e:
-        log(f"Error: {e}")
+        log(f"General Error: {e}")
 
     log("--- Process Complete ---")
