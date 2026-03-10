@@ -1,0 +1,6 @@
+v13 changes:
+
+Added mill notification in user dialogbox when starting job.
+Changed maintenance.py to print in logs for transparency.
+Changed how file naming works for categorizing processes.
+Changed how timer is recorded in program, now utilizing two text files for two different drill bits.

@@ -1,0 +1,7 @@
+v12 changes:
+
+Integrated timer in etch_gcode() in etch.py.
+Added maintenance.py for monitoring drill bit durability.
+Updated app_logic to utilize threading in running etch_gcode.
+Retracted changes in drill_gcode going back to a single dive instead of a helical drilling.
+Updated generate_gcode to warn users instead of stopping process when detecting collisions.
