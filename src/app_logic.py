@@ -12,7 +12,7 @@ from src.drill_gcode import generate_drill_gcode
 from src.mill import plot_gerber
 from src.mill_gcode import generate_mill_gcode
 from src.etch import etch_gcode
-#from backup.maintenance import check_machine_runtime  #USE THIS ONLY ON PI 4B
+#from src.maintenance import check_machine_runtime  #USE THIS ONLY ON PI 4B
 
 from .config import COLORS, FRAME_CONFIGS, APP_SETTINGS
 from .utils import draw_rounded_rect, apply_dark_title_bar
