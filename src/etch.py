@@ -67,7 +67,7 @@ def etch_gcode(file_path, logger=None, app_reference=None):
 
             # --- DYNAMIC USER START ---
             messagebox.showinfo("Before we start..", 
-                                f"1. Make sure that the mounted bit {bit_string}.\n\n"
+                                f"1. Make sure that the mounted bit {bit_string}.\n"
                                 "2. Turn ON spindle.\n"
                                 "3. Click OK to start timer and etching.")
 
@@ -75,7 +75,7 @@ def etch_gcode(file_path, logger=None, app_reference=None):
             start_time = time.time()
             log("Timer started.")
 
-            # STREAM G-CODE
+            # STREAM G-CODE 
             with open(file_path, 'r') as file:
                 for line in file:
                     clean_line = line.strip()
@@ -84,21 +84,35 @@ def etch_gcode(file_path, logger=None, app_reference=None):
                     
                     s.write((clean_line + '\n').encode('utf-8'))
                     while True:
-                        res = s.readline().decode('utf-8').strip()
-                        if 'ok' in res: 
-                            break
-                        elif 'error' in res.lower() or 'ALARM' in res:
-                            log(f"CRITICAL ERROR: {res}")
-                            return
+                        try:
+                            raw_res = s.readline()
+                            # 'replace' handles the .docx/binary garbage safely
+                            res = raw_res.decode('utf-8', errors='replace').strip()
+                            
+                            if 'ok' in res: 
+                                break # Move to the next line in the file
+                                
+                            elif 'error' in res.lower() or 'ALARM' in res:
+                                log(f"MACHINE ERROR: {res}")
+                                return # Kill the etch process for safety
+                                
+                        except Exception as e:
+                            log(f"Serial Read Error: {e}")
+                            return # Exit if the USB is unplugged
 
             # --- WAIT FOR IDLE ---
             log("Job streamed. Waiting for physical completion...")
             while True:
-                s.write(b"?") 
-                status = s.readline().decode('utf-8')
-                if 'Idle' in status:
+                try:
+                    s.write(b"?") 
+                    # Added 'replace' and 'strip' here for consistency
+                    status = s.readline().decode('utf-8', errors='replace').strip()
+                    if 'Idle' in status:
+                        break
+                    time.sleep(0.5)
+                except Exception as e:
+                    log(f"Status Check Error: {e}")
                     break
-                time.sleep(0.5)
 
             # STOP TIMER
             end_time = time.time()
