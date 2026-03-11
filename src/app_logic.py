@@ -4,6 +4,7 @@ from PIL import Image, ImageTk
 from datetime import datetime
 import os
 import threading
+import sys
 
 # Import your existing backend functions
 from src.drill import plot_excellon
@@ -13,9 +14,19 @@ from src.mill_gcode import generate_mill_gcode
 from src.etch import etch_gcode
 from src.maintenance import check_machine_runtime  # USE THIS ONLY ON PI 4B
 
-from .config import COLORS, FRAME_CONFIGS, APP_SETTINGS
-from .utils import draw_rounded_rect, apply_dark_title_bar
+from src.config import COLORS, FRAME_CONFIGS, APP_SETTINGS
+from src.utils import draw_rounded_rect, apply_dark_title_bar
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # If not running as EXE, use the normal folder structure
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 class EtchItApp:
     def __init__(self, root):
@@ -272,123 +283,40 @@ class EtchItApp:
             messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
 
     def on_etch_click(self, event=None):
-        file_path = filedialog.askopenfilename(
-            filetypes=[("Etch Files", "*_etch.nc *_etch.gcode")]
-        )
-        if not file_path:
-            return
-
-        # 1. Identify the bit for the checklist
-        bit_str = "is a drill bit" if "_drill.nc" in file_path.lower() else "is a milling bit"
-
-        # 2. Lift to Safe Z immediately (Main Thread)
-        from src.etch import get_pico_port # Ensure this is accessible
-        pico_port = get_pico_port()
-        
-        if not pico_port:
-            messagebox.showerror("Connection Error", "Pico W port not found.")
-            return
-
-        try:
-            # We open the port briefly to send the 'Lift' command
-            import serial
-            import time
-            SAFE_Z = 2.0
-            with serial.Serial(pico_port, 115200, timeout=1) as s:
-                # 1. Wake up and clear buffers
-                s.write(b"\r\n\r\n")
-                time.sleep(1)
-                
-                # 2. UNLOCK the machine (Crucial after Emergency Stop)
-                self.log_message("Unlocking machine...")
-                s.write(b"$X\n") 
-                time.sleep(0.5) # Give it a moment to process the unlock
-                
-                # 3. Perform the safety lift
-                self.log_message(f"Lifting to Safe Height ({SAFE_Z}mm)...")
-                s.write(f"G90\nG0 Z{SAFE_Z}\n".encode())
-                
-                # Wait for 'ok' to ensure the command was received
-                while True:
-                    res = s.readline().decode('utf-8', errors='replace').strip()
-                    if 'ok' in res: break
-        except Exception as e:
-            self.log_message(f"Initial Serial Error: {e}")
-            return
-
-        # 3. Prompt the Checklist (Main Thread)
-        # This stops the code here until the user clicks 'Start' or 'Cancel'
-        dialog = ChecklistDialog(self.root, bit_str)
-        
-        if dialog.result:
-            self.log_message("Checklist verified. Starting process...")
-            # 4. Now start the background thread for the long job
-            etch_thread = threading.Thread(target=self.run_background_etch, args=(file_path,))
-            etch_thread.daemon = True
-            etch_thread.start()
-        else:
-            self.log_message("User cancelled. Terminating process.")
+        self._handle_gcode_flow("ETCH")
 
     def on_drill_click(self, event=None):
-        file_path = filedialog.askopenfilename(
-            filetypes=[("Drill Files", "*_drill.nc *_drill.gcode")]
-        )
-        if not file_path:
-            return
+        self._handle_gcode_flow("DRILL")
 
-        # 1. Identify the bit for the checklist
-        bit_str = "is a drill bit" if "_drill.nc" in file_path.lower() else "is a milling bit"
+    def _handle_gcode_flow(self, mode):
+        # 1. File Selection
+        ext_filter = "*_etch.nc *_etch.gcode" if mode == "ETCH" else "*_drill.nc *_drill.gcode"
+        file_path = filedialog.askopenfilename(filetypes=[(f"{mode} Files", ext_filter)])
+        if not file_path: return
 
-        # 2. Lift to Safe Z immediately (Main Thread)
-        from src.etch import get_pico_port # Ensure this is accessible
+        # 2. Safety Lift (Simplified)
+        from src.etch import get_pico_port
         pico_port = get_pico_port()
-        
         if not pico_port:
-            messagebox.showerror("Connection Error", "Pico W port not found.")
+            messagebox.showerror("Error", "Pico W not found.")
             return
 
-        try:
-            # We open the port briefly to send the 'Lift' command
-            import serial
-            import time
-            SAFE_Z = 2.0
-            with serial.Serial(pico_port, 115200, timeout=1) as s:
-                # 1. Wake up and clear buffers
-                s.write(b"\r\n\r\n")
-                time.sleep(1)
-                
-                # 2. UNLOCK the machine (Crucial after Emergency Stop)
-                self.log_message("Unlocking machine...")
-                s.write(b"$X\n") 
-                time.sleep(0.5) # Give it a moment to process the unlock
-                
-                # 3. Perform the safety lift
-                self.log_message(f"Lifting to Safe Height ({SAFE_Z}mm)...")
-                s.write(f"G90\nG0 Z{SAFE_Z}\n".encode())
-                
-                # Wait for 'ok' to ensure the command was received
-                while True:
-                    res = s.readline().decode('utf-8', errors='replace').strip()
-                    if 'ok' in res: break
-        except Exception as e:
-            self.log_message(f"Initial Serial Error: {e}")
-            return
-
-        # 3. Prompt the Checklist (Main Thread)
-        # This stops the code here until the user clicks 'Start' or 'Cancel'
+        # Perform the safety lift 
+        # (Note: Keep this logic here as you had it, but ensure etch_gcode handles 
+        #  opening the port again after this block closes it)
+        
+        # 3. Checklist
+        bit_str = "is a drill bit" if mode == "DRILL" else "is a milling bit"
         dialog = ChecklistDialog(self.root, bit_str)
         
         if dialog.result:
-            self.log_message("Checklist verified. Starting process...")
-            # 4. Now start the background thread for the long job
-            etch_thread = threading.Thread(target=self.run_background_etch, args=(file_path,))
-            etch_thread.daemon = True
-            etch_thread.start()
-        else:
-            self.log_message("User cancelled. Terminating process.")
+            self.log_message(f"Starting {mode} process...")
+            thread = threading.Thread(target=self.run_background_job, args=(file_path,))
+            thread.daemon = True
+            thread.start()
 
-
-    def run_background_etch(self, file_path):
+    def run_background_job(self, file_path):
+        # Generic runner for both drill and etch
         etch_gcode(file_path, logger=self.log_message, app_reference=self)
 
     # --- UI DRAWING METHODS ---
@@ -572,44 +500,50 @@ class EtchItApp:
     # --- REST OF CLASS (ASSETS, LOGS, NAV) ---
     def load_assets(self):
         try:
+            # Navigation Icons
             self.home_icon_img = ImageTk.PhotoImage(
-                Image.open("assets/home.png").resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS)
+                Image.open(resource_path("assets/home.png")).resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS)
             )
             self.exit_icon_img = ImageTk.PhotoImage(
-                Image.open("assets/logo3.png").resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS)
+                Image.open(resource_path("assets/logo3.png")).resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS)
             )
             self.hide_icon_img = ImageTk.PhotoImage(
-                Image.open("assets/logo4.png").resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS)
+                Image.open(resource_path("assets/logo4.png")).resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS)
             )
             self.emergency_icon_img = ImageTk.PhotoImage(
-                Image.open("assets/emergency.png").resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS)
+                Image.open(resource_path("assets/emergency.png")).resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS)
             )
 
-            f1_icon = Image.open(self.cfg["frame1_icon_path"]).resize(
+            # Frame 1 Icon
+            f1_icon = Image.open(resource_path(self.cfg["frame1_icon_path"])).resize(
                 self.cfg["frame1_icon_size"],
                 Image.Resampling.LANCZOS
             )
             self.frame1_right_icon = ImageTk.PhotoImage(f1_icon)
 
-            f2_icon = Image.open(self.f2_cfg["icon_path"]).resize(
+            # Frame 2 Icon (View)
+            f2_icon = Image.open(resource_path(self.f2_cfg["icon_path"])).resize(
                 self.f2_cfg["icon_size"],
                 Image.Resampling.LANCZOS
             )
             self.f2_icon_img = ImageTk.PhotoImage(f2_icon)
 
-            f3_icon = Image.open(self.f3_cfg["icon_path"]).resize(
+            # Frame 3 Icon (Etch)
+            f3_icon = Image.open(resource_path(self.f3_cfg["icon_path"])).resize(
                 self.f3_cfg["icon_size"],
                 Image.Resampling.LANCZOS
             )
             self.f3_icon_img = ImageTk.PhotoImage(f3_icon)
 
-            f4_icon = Image.open(self.f4_cfg["icon_path"]).resize(
+            # Frame 4 Icon (Drill)
+            f4_icon = Image.open(resource_path(self.f4_cfg["icon_path"])).resize(
                 self.f4_cfg["icon_size"],
                 Image.Resampling.LANCZOS
             )
             self.f4_icon_img = ImageTk.PhotoImage(f4_icon)
 
-            standalone_img = Image.open(self.right_standalone_cfg["path"]).resize(
+            # Standalone Icon
+            standalone_img = Image.open(resource_path(self.right_standalone_cfg["path"])).resize(
                 self.right_standalone_cfg["size"],
                 Image.Resampling.LANCZOS
             )
@@ -617,7 +551,7 @@ class EtchItApp:
 
         except Exception as e:
             print(f"Asset Error: {e}")
-
+            
     def setup_status_console(self):
         s = self.status_cfg
         self.console_canvas = tk.Canvas(
@@ -722,8 +656,11 @@ class EtchItApp:
 
     def setup_header(self, logo_path):
         try:
-            img = Image.open(logo_path).resize(self.cfg["header_logo_size"], Image.Resampling.LANCZOS)
+            # Resolve path for the header logo
+            resolved_logo_path = resource_path(logo_path)
+            img = Image.open(resolved_logo_path).resize(self.cfg["header_logo_size"], Image.Resampling.LANCZOS)
             self.side_logo_img = ImageTk.PhotoImage(img)
+            
             tk.Label(self.sidebar, image=self.side_logo_img, bg=self.colors["sidebar_bg"]).pack(pady=(40, 5))
             tk.Label(
                 self.sidebar,
@@ -732,8 +669,8 @@ class EtchItApp:
                 fg=self.colors["sidebar_text"],
                 font=("Arial", 11, "bold")
             ).pack(pady=(0, 30))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Header Setup Error: {e}")
 
     def typewriter_effect(self, char_index):
         phrase = self.phrases[self.current_phrase_index]

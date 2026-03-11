@@ -1,18 +1,20 @@
 import gerber
 import math
 
-def generate_drill_gcode(file_path, output_file="drill.nc", safe_z=2.0, drill_z=-1.45):
+def generate_drill_gcode(file_path, logger=None, output_file="drill.nc", safe_z=2.0, drill_z=-1.45):
+    def log(msg):
+        print(msg)
+        if logger: logger(msg)
+
     try:
-        # 1. Open the file manually to avoid the 'rU' mode error
-        with open(file_path, 'r') as f:
+        # Use utf-8 and ignore errors to prevent crashes on legacy files
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
-        # 2. Pass the string content to gerber.read
         layer = gerber.loads(content)
     except Exception as e:
-        print(f"Error reading file: {e}")
+        log(f"Error reading drill file: {e}")
         return False
 
-    # 1. Collect all raw points first
     raw_points = []
     for p in layer.primitives:
         if hasattr(p, 'position'):
@@ -21,22 +23,20 @@ def generate_drill_gcode(file_path, output_file="drill.nc", safe_z=2.0, drill_z=
             raw_points.append((p.x, p.y))
 
     if not raw_points:
-        print("No holes found.")
+        log("No holes found in file.")
         return False
 
-    # 2. Nearest Neighbor Sorting
-    # Start at (0,0) or the first point
+    # Nearest Neighbor Sorting
     optimized_points = []
     current_pos = (0, 0)
     
+    log(f"Optimizing {len(raw_points)} drill hits...")
     while raw_points:
-        # Find the point in raw_points closest to current_pos
         nearest_pt = min(raw_points, key=lambda pt: math.dist(current_pos, pt))
         optimized_points.append(nearest_pt)
         raw_points.remove(nearest_pt)
         current_pos = nearest_pt
 
-    # 3. Write the G-code in the optimized order
     try:
         with open(output_file, "w") as f:
             f.write(f"; Optimized Drill G-code\n")
@@ -50,8 +50,8 @@ def generate_drill_gcode(file_path, output_file="drill.nc", safe_z=2.0, drill_z=
 
             f.write("M5 ; Spindle OFF\nG0 X0 Y0\nM30\n")
             
-        print(f"Success! {len(optimized_points)} holes optimized.")
+        log(f"Success! {len(optimized_points)} holes saved to {output_file}")
         return True
     except Exception as e:
-        print(f"Error: {e}")
+        log(f"Write Error: {e}")
         return False

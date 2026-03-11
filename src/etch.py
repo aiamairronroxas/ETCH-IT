@@ -3,7 +3,6 @@ import serial.tools.list_ports
 import time
 import os
 from tkinter import messagebox
-# Import the shared paths and the check function
 from src.maintenance import check_machine_runtime, DRILL_FILE, MILL_FILE
 
 # --- CONFIGURATION ---
@@ -13,11 +12,13 @@ def get_pico_port():
     """Scans for the Pico W or CH340 serial port."""
     available_ports = serial.tools.list_ports.comports()
     for port in available_ports:
-        desc = port.description or ""
-        dev = port.device or ""
-        if any(x in desc or x in dev for x in ["USB Serial", "Pico", "CH340", "ttyACM"]):
+        desc = (port.description or "").upper()
+        dev = (port.device or "").upper()
+        # Common identifiers for Pico and Serial-to-USB chips
+        if any(x in desc or x in dev for x in ["USB SERIAL", "PICO", "CH340", "TTYACM", "CP210X"]):
             try:
-                with serial.Serial(port.device, 115200, timeout=0.5) as test_s:
+                # Test if the port is actually accessible
+                with serial.Serial(port.device, 115200, timeout=0.1) as test_s:
                     return port.device
             except (serial.SerialException, PermissionError):
                 continue
@@ -29,21 +30,19 @@ def etch_gcode(file_path, logger=None, app_reference=None):
         if logger: logger(msg)
 
     # --- 1. IDENTIFY TOOLING ---
-    # We use the shared paths (DRILL_FILE/MILL_FILE) directly here
-    if file_path.lower().endswith("_drill.nc"):
+    filename = os.path.basename(file_path).lower()
+    if "_drill" in filename or filename.endswith(".drd") or filename.endswith(".xln"):
         count_file_path = DRILL_FILE
         tool_label = "Drill"
-    elif file_path.lower().endswith("_etch.nc"):
+    else:
+        # Default to Mill if not explicitly a drill file
         count_file_path = MILL_FILE
         tool_label = "Mill"
-    else:
-        count_file_path = None
-        tool_label = "Unknown"
 
     pico_port = get_pico_port()
     if not pico_port:
-        log("Error: No Pico W detected.")
-        messagebox.showerror("Connection Error", "Pico W port not found.")
+        log("Error: No Pico W / CNC Controller detected.")
+        messagebox.showerror("Connection Error", "Controller port not found. Check USB connection.")
         return
 
     try:
@@ -51,45 +50,36 @@ def etch_gcode(file_path, logger=None, app_reference=None):
             if app_reference:
                 app_reference.active_serial = s
             
-            s.write(b"\n")
+            # Wake up GRBL / Controller
+            s.write(b"\r\n\r\n")
+            time.sleep(1) # Wait for initialization
             s.reset_input_buffer() 
             
             start_time = time.time()
-            log(f"Streaming {tool_label} G-code...")
+            log(f"Starting {tool_label} job on {pico_port}...")
 
-            # STREAM G-CODE 
-            with open(file_path, 'r') as file:
-                for line in file:
-                    clean_line = line.strip()
-                    if not clean_line or clean_line.startswith('('): 
-                        continue 
-                    
-                    s.write((clean_line + '\n').encode('utf-8'))
-                    while True:
-                        try:
-                            raw_res = s.readline()
-                            res = raw_res.decode('utf-8', errors='replace').strip()
-                            if 'ok' in res: 
-                                break 
-                            elif 'error' in res.lower() or 'ALARM' in res:
-                                log(f"MACHINE ERROR: {res}")
-                                return 
-                        except Exception as e:
-                            log(f"Serial Read Error: {e}")
-                            return 
-
-            # --- WAIT FOR IDLE ---
-            log("Job streamed. Waiting for physical completion...")
-            while True:
-                try:
-                    s.write(b"?") 
-                    status = s.readline().decode('utf-8', errors='replace').strip()
-                    if 'Idle' in status:
+            with open(file_path, 'r') as f:
+                for line in f:
+                    # Check if user pressed "Stop" in the GUI
+                    if app_reference and getattr(app_reference, 'stop_thread', False):
+                        log("!!! JOB ABORTED BY USER !!!")
+                        s.write(b"!") # GRBL immediate stop command
                         break
-                    time.sleep(0.5)
-                except Exception as e:
-                    log(f"Status Check Error: {e}")
-                    break
+
+                    command = line.strip()
+                    if not command or command.startswith(';'):
+                        continue
+
+                    s.write((command + '\n').encode('utf-8'))
+                    
+                    # Wait for 'ok' response from controller
+                    while True:
+                        response = s.readline().decode().strip()
+                        if 'ok' in response.lower():
+                            break
+                        if 'error' in response.lower():
+                            log(f"CNC {response} at line: {command}")
+                            break
 
             duration = time.time() - start_time
             log(f"Job finished in {duration:.2f} seconds.")
@@ -99,34 +89,37 @@ def etch_gcode(file_path, logger=None, app_reference=None):
                 current_total = 0.0
                 if os.path.exists(count_file_path):
                     try:
-                        with open(count_file_path, 'r') as f:
+                        with open(count_file_path, 'r', encoding='utf-8') as f:
                             content = f.read().strip()
                             current_total = float(content) if content else 0.0
-                    except ValueError:
+                    except (ValueError, IOError):
                         current_total = 0.0
 
                 new_total = current_total + duration
                 try:
-                    with open(count_file_path, 'w') as f:
+                    # Save the updated runtime
+                    os.makedirs(os.path.dirname(count_file_path), exist_ok=True)
+                    with open(count_file_path, 'w', encoding='utf-8') as f:
                         f.write(f"{new_total:.2f}")
                         f.flush()
                         os.fsync(f.fileno()) 
-                    log(f"{tool_label} updated. Total: {new_total:.2f}s")
+                    
+                    log(f"Runtime Updated: {new_total:.2f}s total usage.")
+                    
+                    # Trigger maintenance check
+                    check_machine_runtime(logger=log)
                 except Exception as e:
-                    log(f"File Save Error: {e}")
+                    log(f"Maintenance Log Error: {e}")
 
-                # Trigger Maintenance Check
-                try:
-                    # We already imported it at the top, so we just call it
-                    check_machine_runtime(logger=log) 
-                except Exception as e:
-                    log(f"Maintenance Check Error: {e}")
-            else:
-                log("Unknown file type. Duration not added to maintenance.")
-
+    except serial.SerialException as e:
+        log(f"Serial Connection Lost: {e}")
+        messagebox.showerror("Hardware Error", "Serial connection lost during etching.")
     except Exception as e:
-        log(f"General Error: {e}")
+        log(f"Critical Error: {e}")
     finally:
         if app_reference:
             app_reference.active_serial = None
-        log("--- Process Complete ---")
+            # Reset the stop flag for the next job
+            if hasattr(app_reference, 'stop_thread'):
+                app_reference.stop_thread = False
+        log("--- Session Closed ---")
