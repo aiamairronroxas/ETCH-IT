@@ -1,0 +1,4 @@
+v14 changes:
+
+Added an emergency stop function in the GUI.
+Updated app_logic to handle emergency stops.
