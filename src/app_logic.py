@@ -191,7 +191,7 @@ class EtchItApp:
     # --- PLACE ETCH FUNCTION HERE ---
 
     def on_etch_click(self, event=None):
-        file_path = filedialog.askopenfilename(filetypes=[("G-Code", "*.nc;*.gcode")])
+        file_path = filedialog.askopenfilename(filetypes=[("G-Code Files", "*.nc *.gcode"), ("All Files", "*.*")])
         if not file_path: return
 
         # We wrap the etch_gcode in a thread
