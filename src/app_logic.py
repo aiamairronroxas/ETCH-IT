@@ -278,9 +278,56 @@ class EtchItApp:
         if not file_path:
             return
 
-        etch_thread = threading.Thread(target=self.run_background_etch, args=(file_path,))
-        etch_thread.daemon = True
-        etch_thread.start()
+        # 1. Identify the bit for the checklist
+        bit_str = "is a drill bit" if "_drill.nc" in file_path.lower() else "is a milling bit"
+
+        # 2. Lift to Safe Z immediately (Main Thread)
+        from src.etch import get_pico_port # Ensure this is accessible
+        pico_port = get_pico_port()
+        
+        if not pico_port:
+            messagebox.showerror("Connection Error", "Pico W port not found.")
+            return
+
+        try:
+            # We open the port briefly to send the 'Lift' command
+            import serial
+            import time
+            SAFE_Z = 2.0
+            with serial.Serial(pico_port, 115200, timeout=1) as s:
+                # 1. Wake up and clear buffers
+                s.write(b"\r\n\r\n")
+                time.sleep(1)
+                
+                # 2. UNLOCK the machine (Crucial after Emergency Stop)
+                self.log_message("Unlocking machine...")
+                s.write(b"$X\n") 
+                time.sleep(0.5) # Give it a moment to process the unlock
+                
+                # 3. Perform the safety lift
+                self.log_message(f"Lifting to Safe Height ({SAFE_Z}mm)...")
+                s.write(f"G90\nG0 Z{SAFE_Z}\n".encode())
+                
+                # Wait for 'ok' to ensure the command was received
+                while True:
+                    res = s.readline().decode('utf-8', errors='replace').strip()
+                    if 'ok' in res: break
+        except Exception as e:
+            self.log_message(f"Initial Serial Error: {e}")
+            return
+
+        # 3. Prompt the Checklist (Main Thread)
+        # This stops the code here until the user clicks 'Start' or 'Cancel'
+        dialog = ChecklistDialog(self.root, bit_str)
+        
+        if dialog.result:
+            self.log_message("Checklist verified. Starting process...")
+            # 4. Now start the background thread for the long job
+            etch_thread = threading.Thread(target=self.run_background_etch, args=(file_path,))
+            etch_thread.daemon = True
+            etch_thread.start()
+        else:
+            self.log_message("User cancelled. Terminating process.")
 
     def on_drill_click(self, event=None):
         file_path = filedialog.askopenfilename(
@@ -289,9 +336,56 @@ class EtchItApp:
         if not file_path:
             return
 
-        etch_thread = threading.Thread(target=self.run_background_etch, args=(file_path,))
-        etch_thread.daemon = True
-        etch_thread.start()
+        # 1. Identify the bit for the checklist
+        bit_str = "is a drill bit" if "_drill.nc" in file_path.lower() else "is a milling bit"
+
+        # 2. Lift to Safe Z immediately (Main Thread)
+        from src.etch import get_pico_port # Ensure this is accessible
+        pico_port = get_pico_port()
+        
+        if not pico_port:
+            messagebox.showerror("Connection Error", "Pico W port not found.")
+            return
+
+        try:
+            # We open the port briefly to send the 'Lift' command
+            import serial
+            import time
+            SAFE_Z = 2.0
+            with serial.Serial(pico_port, 115200, timeout=1) as s:
+                # 1. Wake up and clear buffers
+                s.write(b"\r\n\r\n")
+                time.sleep(1)
+                
+                # 2. UNLOCK the machine (Crucial after Emergency Stop)
+                self.log_message("Unlocking machine...")
+                s.write(b"$X\n") 
+                time.sleep(0.5) # Give it a moment to process the unlock
+                
+                # 3. Perform the safety lift
+                self.log_message(f"Lifting to Safe Height ({SAFE_Z}mm)...")
+                s.write(f"G90\nG0 Z{SAFE_Z}\n".encode())
+                
+                # Wait for 'ok' to ensure the command was received
+                while True:
+                    res = s.readline().decode('utf-8', errors='replace').strip()
+                    if 'ok' in res: break
+        except Exception as e:
+            self.log_message(f"Initial Serial Error: {e}")
+            return
+
+        # 3. Prompt the Checklist (Main Thread)
+        # This stops the code here until the user clicks 'Start' or 'Cancel'
+        dialog = ChecklistDialog(self.root, bit_str)
+        
+        if dialog.result:
+            self.log_message("Checklist verified. Starting process...")
+            # 4. Now start the background thread for the long job
+            etch_thread = threading.Thread(target=self.run_background_etch, args=(file_path,))
+            etch_thread.daemon = True
+            etch_thread.start()
+        else:
+            self.log_message("User cancelled. Terminating process.")
 
 
     def run_background_etch(self, file_path):
@@ -694,3 +788,75 @@ class EtchItApp:
                 self.log_message(f"Stop Failed: {e}")
         else:
             self.log_message("No active serial connection to stop.")
+
+class ChecklistDialog(tk.Toplevel):
+    def __init__(self, parent, bit_string):
+        super().__init__(parent)
+        self.title("Pre-Etch Checklist")
+        self.configure(bg="#2b2b2b")
+        
+        # 1. Allow resizing if you want, but we'll set the perfect start size
+        self.resizable(True, True) 
+        
+        self.result = False 
+        self.var1, self.var2, self.var3 = tk.BooleanVar(), tk.BooleanVar(), tk.BooleanVar()
+
+        # --- UI ELEMENTS ---
+        tk.Label(self, text="SAFETY CHECKLIST", font=("Arial", 12, "bold"), 
+                 bg="#2b2b2b", fg="#FF4444", pady=15).pack()
+
+        style = {"bg": "#2b2b2b", "fg": "white", "selectcolor": "#424242", 
+                 "activebackground": "#2b2b2b", "activeforeground": "white", "disabledforeground": "#555555"}
+
+        self.cb1 = tk.Checkbutton(self, text=f"1. Confirm: Mounted bit {bit_string}", 
+                                  variable=self.var1, command=self.update_flow, **style)
+        self.cb1.pack(anchor="w", padx=40, pady=5)
+
+        self.cb2 = tk.Checkbutton(self, text="2. Confirm: Spindle is turned ON", 
+                                  variable=self.var2, state="disabled", command=self.update_flow, **style)
+        self.cb2.pack(anchor="w", padx=40, pady=5)
+
+        self.cb3 = tk.Checkbutton(self, text="3. Confirm: Path is clear of clamps", 
+                                  variable=self.var3, state="disabled", command=self.update_flow, **style)
+        self.cb3.pack(anchor="w", padx=40, pady=5)
+
+        self.start_btn = tk.Button(self, text="START ETCHING", state="disabled", 
+                                   width=20, command=self.on_start, bg="#444444", fg="white")
+        self.start_btn.pack(pady=20)
+
+        # --- DYNAMIC CENTERING & SIZING ---
+        # Force Tkinter to calculate how big the window NEEDS to be based on the text
+        self.update_idletasks()
+        
+        # Get the 'natural' width and height (with some extra padding)
+        width = self.winfo_reqwidth() + 40 
+        height = self.winfo_reqheight() + 20
+        
+        # Calculate center coordinates
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        
+        # Set geometry with the calculated size
+        self.geometry(f'{width}x{height}+{x}+{y}')
+
+        # Modal behavior
+        self.transient(parent)
+        self.grab_set()
+        self.wait_window()
+
+    def update_flow(self):
+        # ... logic stays the same ...
+        if self.var1.get(): self.cb2.config(state="normal")
+        else: self.var2.set(False); self.cb2.config(state="disabled")
+            
+        if self.var2.get(): self.cb3.config(state="normal")
+        else: self.var3.set(False); self.cb3.config(state="disabled")
+
+        if all([self.var1.get(), self.var2.get(), self.var3.get()]):
+            self.start_btn.config(state="normal", bg="#FF4444")
+        else:
+            self.start_btn.config(state="disabled", bg="#444444")
+
+    def on_start(self):
+        self.result = True
+        self.destroy()
