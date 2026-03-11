@@ -23,7 +23,7 @@ def get_pico_port():
                 continue
     return None
 
-def etch_gcode(file_path, logger=None):
+def etch_gcode(file_path, logger=None, app_reference=None):
     def log(msg):
         print(msg)
         if logger: logger(msg)
@@ -50,10 +50,16 @@ def etch_gcode(file_path, logger=None):
 
     try:
         with serial.Serial(pico_port, 115200, timeout=1) as s:
+            if app_reference:
+                app_reference.active_serial = s
             # --- INITIALIZE ---
             s.write(b"\r\n\r\n")
             time.sleep(1)
             s.reset_input_buffer() 
+
+            log("Unlocking machine...")
+            s.write(b"$X\n") # $X is the universal GRBL command to unlock
+            time.sleep(0.2)
 
             log(f"Lifting to Safe Height ({SAFE_Z}mm)...")
             s.write(f"G90\nG0 Z{SAFE_Z}\n".encode()) 
@@ -131,8 +137,11 @@ def etch_gcode(file_path, logger=None):
                 #    log(f"Maintenance LED Check Error: {e}")
             else:
                 log("Unknown file type. Duration not added to maintenance.")
-
     except Exception as e:
         log(f"General Error: {e}")
 
+    finally:
+        # Clear the reference when done
+        if app_reference:
+            app_reference.active_serial = None
     log("--- Process Complete ---")
