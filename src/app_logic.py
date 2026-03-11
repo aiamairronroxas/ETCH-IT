@@ -366,7 +366,6 @@ class EtchItApp:
             widget.destroy()
 
     def handle_emergency_stop(self):
-        self.log_message("!!! EMERGENCY STOP !!!")
         if self.active_serial and self.active_serial.is_open:
             try:
                 # 1. Clear the Python-side buffer
@@ -375,7 +374,7 @@ class EtchItApp:
                 # 2. Send the Soft Reset character (0x18)
                 # This is the standard "Abort" for GRBL/CNC controllers
                 self.active_serial.write(b'\x18') 
-                
+                self.log_message("!!! EMERGENCY STOP !!!")
                 self.log_message("Abort signal (0x18) sent to Pico.")
             except Exception as e:  
                 self.log_message(f"Stop Failed: {e}")
