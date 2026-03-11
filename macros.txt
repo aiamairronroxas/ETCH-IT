@@ -1,0 +1,14 @@
+THIS TEXT FILES CONTAINS THE CUSTOM Z PROBE
+
+How to use macro:
+1. In UGS, click windows, then macros.
+2. A macro window should show up in the lower left window of UGS.
+3. Select the macros window.
+4. Right click on the space in the macros window.
+5. Select create macros/edit macros.
+6. In the center of the macro window that popped up, click the +Add button on the lower right.
+7. Paste the string below on the GCode column.
+    38.2 Z-10 F50; G92 Z0.1; G0 Z10
+8. Click apply and exit the window.
+9. A macro button containing the gcode you created will be present in the macros window.
+10. Everytime you switch drill bits, just click the macro button and it will automatically calibrate itself.

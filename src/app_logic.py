@@ -12,7 +12,7 @@ from src.drill_gcode import generate_drill_gcode
 from src.mill import plot_gerber
 from src.mill_gcode import generate_mill_gcode
 from src.etch import etch_gcode
-#from src.maintenance import check_machine_runtime  #USE THIS ONLY ON PI 4B
+from src.maintenance import check_machine_runtime  #USE THIS ONLY ON PI 4B
 
 from .config import COLORS, FRAME_CONFIGS, APP_SETTINGS
 from .utils import draw_rounded_rect, apply_dark_title_bar
@@ -109,7 +109,7 @@ class EtchItApp:
         self.root.after(100, self.sync_sidebar_buttons)
         
         self.log_message("System Initialized... Ready for input.")
-        # self.root.after(3500, lambda: check_machine_runtime(logger=self.log_message))              # RUN THIS ONLY ON RPI 4B
+        self.root.after(3500, lambda: check_machine_runtime(logger=self.log_message))              # RUN THIS ONLY ON RPI 4B
     # --- CORE LOGIC HELPER ---
     def get_file_and_mode(self):
         filetypes = [
@@ -366,7 +366,6 @@ class EtchItApp:
             widget.destroy()
 
     def handle_emergency_stop(self):
-        self.log_message("!!! EMERGENCY STOP !!!")
         if self.active_serial and self.active_serial.is_open:
             try:
                 # 1. Clear the Python-side buffer
@@ -375,7 +374,7 @@ class EtchItApp:
                 # 2. Send the Soft Reset character (0x18)
                 # This is the standard "Abort" for GRBL/CNC controllers
                 self.active_serial.write(b'\x18') 
-                
+                self.log_message("!!! EMERGENCY STOP !!!")
                 self.log_message("Abort signal (0x18) sent to Pico.")
             except Exception as e:  
                 self.log_message(f"Stop Failed: {e}")

@@ -1,0 +1,5 @@
+v15 changes:
+
+Minor changes on app_logic and etch.py to be able to call maintenance regardless of OS
+Changed how LEDs are initialized in maintenance.py for ease of change between different OS for testing.
+Added macro.txt for a tutorial on how to use macros in UGS.
