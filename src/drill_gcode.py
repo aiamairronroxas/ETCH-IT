@@ -16,7 +16,7 @@ def generate_drill_gcode(file_path, output_file="drill.nc", safe_z=2.0, drill_z=
     raw_points = []
     for p in layer.primitives:
         if hasattr(p, 'position'):
-            raw_points.append(p.position)
+            raw_points.append(p.position)   
         elif hasattr(p, 'x') and hasattr(p, 'y'):
             raw_points.append((p.x, p.y))
 

@@ -109,7 +109,7 @@ def generate_mill_gcode(file_path, logger=None, output_file="mill.nc", tool_dia=
         current_pos = chosen_path[-1]
 
     # --- 4. Write G-Code ---
-    feedRate = 25
+    feedRate = 75
     try:
         print(f"Writing G-Code to {output_file}...")
         with open(output_file, "w") as f:

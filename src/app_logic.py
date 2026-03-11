@@ -95,9 +95,11 @@ class EtchItApp:
                                             y=self.right_standalone_cfg["pos_y"])
             self.home_elements.append(self.standalone_icon_label)
 
+        self.active_serial = None    # SERIAL TERMINAL
         # Sidebar setup
         self.setup_header("assets/logo2.png")
         self.home_btn = self.create_nav_item("Home", self.home_icon_img, pack_side="top")
+        self.stop_btn = self.create_nav_item("STOP", self.emergency_icon_img, pack_side="top")
         self.exit_btn = self.create_nav_item("Exit", self.exit_icon_img, pack_side="bottom")
         self.hide_btn = self.create_nav_item("Hide", self.hide_icon_img, pack_side="bottom")
         
@@ -107,9 +109,7 @@ class EtchItApp:
         self.root.after(100, self.sync_sidebar_buttons)
         
         self.log_message("System Initialized... Ready for input.")
-
         # self.root.after(3500, lambda: check_machine_runtime(logger=self.log_message))              # RUN THIS ONLY ON RPI 4B
-
     # --- CORE LOGIC HELPER ---
     def get_file_and_mode(self):
         filetypes = [
@@ -203,7 +203,7 @@ class EtchItApp:
 
     def run_background_etch(self, file_path):
         # This runs in the background
-        etch_gcode(file_path, logger=self.log_message)
+        etch_gcode(file_path, logger=self.log_message, app_reference=self)
 
     # --- UI DRAWING METHODS ---
     def draw_f1_content(self):
@@ -273,6 +273,8 @@ class EtchItApp:
             self.home_icon_img = ImageTk.PhotoImage(Image.open("assets/home.png").resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS))
             self.exit_icon_img = ImageTk.PhotoImage(Image.open("assets/logo3.png").resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS))
             self.hide_icon_img = ImageTk.PhotoImage(Image.open("assets/logo4.png").resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS))
+            self.emergency_icon_img = ImageTk.PhotoImage(Image.open("assets/emergency.png").resize(self.cfg["nav_icon_size"], Image.Resampling.LANCZOS))
+
             f1_icon = Image.open(self.cfg["frame1_icon_path"]).resize(self.cfg["frame1_icon_size"], Image.Resampling.LANCZOS)
             self.frame1_right_icon = ImageTk.PhotoImage(f1_icon)
             f2_icon = Image.open(self.f2_cfg["icon_path"]).resize(self.f2_cfg["icon_size"], Image.Resampling.LANCZOS)
@@ -321,6 +323,7 @@ class EtchItApp:
     def handle_click(self, name):
         if name == "Exit": self.root.destroy()
         elif name == "Hide": self.root.iconify()
+        elif name == "STOP": self.handle_emergency_stop()
 
     def setup_header(self, logo_path):
         try:
@@ -354,10 +357,27 @@ class EtchItApp:
         sidebar_w = self.sidebar.winfo_width()
         new_size = sidebar_w - (self.cfg["button_padding_x"] * 2)
         if new_size > 20:
-            for btn in [self.home_btn, self.exit_btn, self.hide_btn]:
+            for btn in [self.home_btn, self.stop_btn, self.exit_btn, self.hide_btn]:
                 btn["canvas"].config(width=new_size, height=new_size)
                 self.root.after(10, lambda b=btn: self.draw_btn(b["canvas"], self.colors["sidebar_bg"], b["text"], b["icon"]))
 
     def clear_screen(self):
         for widget in self.main_content.winfo_children():
             widget.destroy()
+
+    def handle_emergency_stop(self):
+        self.log_message("!!! EMERGENCY STOP !!!")
+        if self.active_serial and self.active_serial.is_open:
+            try:
+                # 1. Clear the Python-side buffer
+                self.active_serial.reset_output_buffer()
+                
+                # 2. Send the Soft Reset character (0x18)
+                # This is the standard "Abort" for GRBL/CNC controllers
+                self.active_serial.write(b'\x18') 
+                
+                self.log_message("Abort signal (0x18) sent to Pico.")
+            except Exception as e:  
+                self.log_message(f"Stop Failed: {e}")
+        else:
+            self.log_message("No active serial connection to stop.")
