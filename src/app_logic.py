@@ -12,7 +12,7 @@ from src.drill_gcode import generate_drill_gcode
 from src.mill import plot_gerber
 from src.mill_gcode import generate_mill_gcode
 from src.etch import etch_gcode
-#from src.maintenance import check_machine_runtime  #USE THIS ONLY ON PI 4B
+from src.maintenance import check_machine_runtime  #USE THIS ONLY ON PI 4B
 
 from .config import COLORS, FRAME_CONFIGS, APP_SETTINGS
 from .utils import draw_rounded_rect, apply_dark_title_bar
@@ -109,7 +109,7 @@ class EtchItApp:
         self.root.after(100, self.sync_sidebar_buttons)
         
         self.log_message("System Initialized... Ready for input.")
-        # self.root.after(3500, lambda: check_machine_runtime(logger=self.log_message))              # RUN THIS ONLY ON RPI 4B
+        self.root.after(3500, lambda: check_machine_runtime(logger=self.log_message))              # RUN THIS ONLY ON RPI 4B
     # --- CORE LOGIC HELPER ---
     def get_file_and_mode(self):
         filetypes = [

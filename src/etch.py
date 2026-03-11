@@ -130,11 +130,11 @@ def etch_gcode(file_path, logger=None, app_reference=None):
                     log(f"File Save Error: {e}")
 
                 # Trigger Maintenance LED                             #USE THIS ONLY ON RPI 4B
-                #try:
-                #    from maintenance import check_machine_runtime
-                #    check_machine_runtime(logger=log) 
-                #except Exception as e:
-                #    log(f"Maintenance LED Check Error: {e}")
+                try:
+                    from maintenance import check_machine_runtime
+                    check_machine_runtime(logger=log) 
+                except Exception as e:
+                    log(f"Maintenance LED Check Error: {e}")
             else:
                 log("Unknown file type. Duration not added to maintenance.")
     except Exception as e:
