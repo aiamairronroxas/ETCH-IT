@@ -1,0 +1,4 @@
+v17 changes:
+
+Added a safety checkbox before starting etch job.
+Modified etch.py and drill.py to properly locate drill and mill count text files.
